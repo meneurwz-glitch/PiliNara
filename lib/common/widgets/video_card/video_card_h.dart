@@ -32,7 +32,6 @@ class VideoCardH extends StatelessWidget {
   final VoidCallback? onTap;
   final ValueChanged<int>? onViewLater;
   final VoidCallback? onRemove;
-  final String heroTag = Utils.makeHeroTag(videoItem.bvid ?? videoItem.aid);
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +41,7 @@ class VideoCardH extends StatelessWidget {
       cover: videoItem.cover,
     );
     final theme = Theme.of(context);
+    final heroTag = Utils.makeHeroTag(videoItem.bvid ?? videoItem.aid);
     return Material(
       type: .transparency,
       child: Stack(
