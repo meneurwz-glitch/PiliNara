@@ -306,6 +306,7 @@ abstract final class SettingBoxKey {
       sideBarThreshold = 'sideBarThreshold',
       enableMYBar = 'enableMYBar',
       enableGradientBg = 'enableGradientBg',
+      enableHomeCustomTabs = 'enableHomeCustomTabs',
       hideTopBar = 'hideSearchBar',
       hideBottomBar = 'hideTabBar',
       barHideType = 'barHideType',
