@@ -12,6 +12,7 @@ import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/global_data.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
+import 'package:PiliPlus/utils/utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -31,6 +32,7 @@ class VideoCardH extends StatelessWidget {
   final VoidCallback? onTap;
   final ValueChanged<int>? onViewLater;
   final VoidCallback? onRemove;
+  final String heroTag = Utils.makeHeroTag(videoItem.bvid ?? videoItem.aid);
 
   @override
   Widget build(BuildContext context) {
@@ -82,6 +84,7 @@ class VideoCardH extends StatelessWidget {
                   }
                   if (cid != null) {
                     PageUtils.toVideoPage(
+                      heroTag: heroTag,
                       bvid: videoItem.bvid,
                       cid: cid,
                       cover: videoItem.cover,
@@ -115,10 +118,13 @@ class VideoCardH extends StatelessWidget {
                         return Stack(
                           clipBehavior: .none,
                           children: [
-                            NetworkImgLayer(
-                              src: videoItem.cover,
-                              width: maxWidth,
-                              height: maxHeight,
+                            Hero(
+                              tag: heroTag,
+                              child: NetworkImgLayer(
+                                src: videoItem.cover,
+                                width: maxWidth,
+                                height: maxHeight,
+                              ),
                             ),
                             if (videoItem.badge case final badge?)
                               PBadge(
