@@ -47,8 +47,8 @@ class _HomePageState extends CommonPageState<HomePage>
     super.build(context);
     Widget tabBar;
     if (_homeController.tabs.length > 1) {
-      if (Pref.enableGradientBg) {
-        // 开启渐变时用圆角 chip 标签栏（颜色随主题动态），关闭时回退原生 TabBar
+      if (Pref.enableHomeCustomTabs) {
+        // 开启「首页自定义标签栏」时用圆角 chip 标签栏（颜色随主题动态），关闭时回退原生 TabBar
         tabBar = CustomTabs(homeController: _homeController);
       } else {
         tabBar = Padding(
