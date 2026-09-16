@@ -1264,6 +1264,8 @@ abstract final class Pref {
 
   static bool get enableGradientBg =>
       _setting.get(SettingBoxKey.enableGradientBg, defaultValue: true);
+  static bool get enableHomeCustomTabs =>
+      _setting.get(SettingBoxKey.enableHomeCustomTabs, defaultValue: true);
 
   static Transition get pageTransition =>
       Transition.values[_setting.get(
