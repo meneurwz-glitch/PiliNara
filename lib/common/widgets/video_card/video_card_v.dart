@@ -14,6 +14,7 @@ import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/extension/dimension_ext.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
+import 'package:PiliPlus/utils/utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/global_data.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
@@ -25,6 +26,7 @@ import 'package:material_ui/material_ui.dart';
 class VideoCardV extends StatelessWidget {
   final BaseRcmdVideoItemModel videoItem;
   final VoidCallback? onRemove;
+  final String heroTag = Utils.makeHeroTag(videoItem.bvid ?? videoItem.aid);
 
   const VideoCardV({
     super.key,
@@ -56,6 +58,7 @@ class VideoCardV extends StatelessWidget {
         }
         if (cid != null) {
           PageUtils.toVideoPage(
+            heroTag: heroTag,
             aid: videoItem.aid,
             bvid: bvid,
             cid: cid,
@@ -109,11 +112,14 @@ class VideoCardV extends StatelessWidget {
                       return Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          NetworkImgLayer(
-                            src: videoItem.cover,
-                            width: maxWidth,
-                            height: maxHeight,
-                            borderRadius: const .vertical(top: .circular(12)),
+                          Hero(
+                            tag: heroTag,
+                            child: NetworkImgLayer(
+                              src: videoItem.cover,
+                              width: maxWidth,
+                              height: maxHeight,
+                              borderRadius: const .vertical(top: .circular(12)),
+                            ),
                           ),
                           if (videoItem.duration > 0)
                             PBadge(
