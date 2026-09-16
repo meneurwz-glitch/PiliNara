@@ -150,6 +150,14 @@ List<SettingsModel> get styleSettings => [
     defaultVal: false,
     needReboot: true,
   ),
+  const SwitchModel(
+    title: '首页自定义标签栏',
+    subtitle: '用圆角标签栏替代原生 TabBar',
+    leading: Icon(Icons.tab_outlined),
+    setKey: SettingBoxKey.enableHomeCustomTabs,
+    defaultVal: true,
+    needReboot: true,
+  ),
   NormalModel(
     leading: const Icon(Icons.calendar_view_week_outlined),
     title: '列表宽度（dp）限制',
