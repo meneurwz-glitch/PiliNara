@@ -399,33 +399,28 @@ class CustomChip extends StatelessWidget {
   Widget build(BuildContext context) {
     const VisualDensity visualDensity =
         VisualDensity(horizontal: -4.0, vertical: -2.0);
-    return AnimatedScale(
-      scale: selected ? 1.06 : 1.0,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutBack,
-      child: InputChip(
-        side: selected
-            ? BorderSide(
-                color: colorScheme.secondary.withValues(alpha: 0.2),
-                width: 2,
-              )
-            : BorderSide.none,
-        color: WidgetStateProperty.resolveWith<Color>(
-          (Set<WidgetState> states) =>
-              colorScheme.secondaryContainer.withValues(alpha: 0.6),
-        ),
-        padding: const EdgeInsets.fromLTRB(6, 1, 6, 1),
-        label: Text(
-          label,
-          style: selected
-              ? const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)
-              : const TextStyle(fontSize: 13),
-        ),
-        onPressed: onTap,
-        selected: selected,
-        showCheckmark: false,
-        visualDensity: visualDensity,
+    return InputChip(
+      side: selected
+          ? BorderSide(
+              color: colorScheme.secondary.withValues(alpha: 0.2),
+              width: 2,
+            )
+          : BorderSide.none,
+      color: WidgetStateProperty.resolveWith<Color>(
+        (Set<WidgetState> states) =>
+            colorScheme.secondaryContainer.withValues(alpha: 0.6),
       ),
+      padding: const EdgeInsets.fromLTRB(6, 1, 6, 1),
+      label: Text(
+        label,
+        style: selected
+            ? const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)
+            : const TextStyle(fontSize: 13),
+      ),
+      onPressed: onTap,
+      selected: selected,
+      showCheckmark: false,
+      visualDensity: visualDensity,
     );
   }
 }
