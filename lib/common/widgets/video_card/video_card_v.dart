@@ -166,7 +166,7 @@ class VideoCardV extends StatelessWidget {
             ),
           ),
       ],
-    );
+    ),
     );
   }
 
