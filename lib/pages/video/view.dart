@@ -89,6 +89,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:screen_brightness_platform_interface/screen_brightness_platform_interface.dart';
+import 'package:<PKG>/common/widgets/video_card/video_card_transition.dart';
 
 class VideoDetailPageV extends StatefulWidget {
   const VideoDetailPageV({super.key});
@@ -1990,7 +1991,14 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
         ? Theme(data: theme, child: child)
         : child;
     // 页面根参照系：归位目标矩形以此量取（规避路由转场期间的整页偏移）
-    return KeyedSubtree(key: _pageRootKey, child: page);
+    return KeyedSubtree(
+      key: _pageRootKey,
+      child: VideoPageHeroTarget(
+        tag: heroTag,
+        surfaceColor: theme.canvasColor,
+        child: page,
+      ),
+    );
   }
 
   /// 包住 tab 内容区：方向键滚动当前激活 tab 的内容。
