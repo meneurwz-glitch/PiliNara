@@ -4,7 +4,6 @@ import 'package:PiliPlus/common/widgets/image/image_save.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/stat/stat.dart';
 import 'package:PiliPlus/common/widgets/video_popup_menu.dart';
-import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:PiliPlus/http/search.dart';
 import 'package:PiliPlus/models/home/rcmd/result.dart';
 import 'package:PiliPlus/models/model_rec_video_item.dart';
@@ -21,6 +20,8 @@ import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
+import 'package:PiliPlus/utils/utils.dart';
 
 // 视频卡片 - 垂直布局
 class VideoCardV extends StatelessWidget {
@@ -98,8 +99,8 @@ class VideoCardV extends StatelessWidget {
           tag: heroTag,
           surfaceColor: transitionBackgroundOf(context),
           child: Card(
-            child: InkWell(
-              onTap: onPushDetail,
+          child: InkWell(
+            onTap: onPushDetail,
             onLongPress: onLongPress,
             onSecondaryTap: PlatformUtils.isMobile ? null : onLongPress,
             borderRadius: const .all(.circular(12)),
@@ -121,6 +122,7 @@ class VideoCardV extends StatelessWidget {
                             height: maxHeight,
                             borderRadius: const .vertical(top: .circular(12)),
                           ),
+        ),
                           if (videoItem.duration > 0)
                             PBadge(
                               bottom: 6,
@@ -164,8 +166,7 @@ class VideoCardV extends StatelessWidget {
               onRemove: onRemove,
             ),
           ),
-        ),
-      ],    
+      ],
     );
   }
 
