@@ -36,6 +36,8 @@ import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:<PKG>/common/widgets/video_card/video_card_transition.dart';
+import 'package:<PKG>/pages/video/view.dart'; // VideoDetailPageV
 
 abstract final class PageUtils {
   static RelativeRect menuPosition(Offset offset) {
@@ -532,6 +534,7 @@ abstract final class PageUtils {
     bool isVertical = false,
     Dimension? dimension,
   }) {
+    final heroTag = Utils.makeHeroTag(cid);
     final arguments = {
       'aid': aid ?? IdUtils.bv2av(bvid!),
       'bvid': bvid ?? IdUtils.av2bv(aid!),
@@ -544,10 +547,19 @@ abstract final class PageUtils {
       'progress': ?progress,
       'videoType': videoType,
       'isVertical': dimension?.isVertical ?? isVertical,
-      'heroTag': Utils.makeHeroTag(cid),
+      'heroTag': heroTag,
       ...?extraArguments,
     };
-    return PageUtils.toDupNamed('/videoV', arguments: arguments, off: off);
+    if (!hasPendingVideoCardTransition(heroTag)) {
+      return PageUtils.toDupNamed('/videoV', arguments: arguments, off: off);
+    }
+    final navigator = Get.key.currentState;
+    if (navigator == null) return null;
+    final route = VideoPageTransitionRoute<void>(
+      settings: RouteSettings(name: '/videoV', arguments: arguments),
+      builder: (_) => const VideoDetailPageV(),
+    );
+    return off ? navigator.pushReplacement<void, void>(route) : navigator.push<void>(route);
   }
 
   static final _pgcRegex = RegExp(r'(ep|ss)(\d+)');
