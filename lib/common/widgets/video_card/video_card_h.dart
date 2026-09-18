@@ -41,9 +41,14 @@ class VideoCardH extends StatelessWidget {
       cover: videoItem.cover,
     );
     final theme = Theme.of(context);
-    return Material(
-      type: .transparency,
-      child: Stack(
+    final String heroTag =
+        Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
+    return VideoCardHero(
+      tag: heroTag,
+      surfaceColor: transitionBackgroundOf(context),
+      child: Material(
+        type: .transparency,
+        child: Stack(
         clipBehavior: .none,
         children: [
           InkWell(
@@ -186,6 +191,7 @@ class VideoCardH extends StatelessWidget {
           ),
         ],
       ),
+      ),   
     );
   }
 
