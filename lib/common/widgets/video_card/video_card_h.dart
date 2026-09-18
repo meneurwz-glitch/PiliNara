@@ -42,7 +42,7 @@ class VideoCardH extends StatelessWidget {
       cover: videoItem.cover,
     );
     final theme = Theme.of(context);
-    final _heroTag = Utils.makeHeroTag(videoItem.bvid ?? videoItem.aid);
+    final _heroTag = Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
     return VideoCardHero(
       tag: _heroTag,
       surfaceColor: transitionBackgroundOf(context),
@@ -285,3 +285,4 @@ class VideoCardH extends StatelessWidget {
     );
   }
 }
+
