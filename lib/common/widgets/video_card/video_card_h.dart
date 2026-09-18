@@ -5,7 +5,6 @@ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/progress_bar/video_progress_indicator.dart';
 import 'package:PiliPlus/common/widgets/stat/stat.dart';
 import 'package:PiliPlus/common/widgets/video_popup_menu.dart';
-import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:PiliPlus/http/search.dart';
 import 'package:PiliPlus/models/horizontal_video_model.dart';
 import 'package:PiliPlus/models_new/video/video_detail/dimension.dart';
@@ -16,6 +15,8 @@ import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
+import 'package:PiliPlus/utils/utils.dart';
 
 // 视频卡片 - 水平布局
 class VideoCardH extends StatelessWidget {
@@ -47,8 +48,8 @@ class VideoCardH extends StatelessWidget {
       tag: heroTag,
       surfaceColor: transitionBackgroundOf(context),
       child: Material(
-        type: .transparency,
-        child: Stack(
+      type: .transparency,
+      child: Stack(
         clipBehavior: .none,
         children: [
           InkWell(
@@ -94,6 +95,7 @@ class VideoCardH extends StatelessWidget {
                       title: videoItem.title,
                       dimension: dimension,
                     );
+    );
                     final String? key =
                         videoItem.bvid ?? videoItem.aid?.toString();
                     if (key != null && key.isNotEmpty) {
@@ -191,7 +193,6 @@ class VideoCardH extends StatelessWidget {
           ),
         ],
       ),
-      ),   
     );
   }
 
