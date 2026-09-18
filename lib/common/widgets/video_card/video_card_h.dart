@@ -191,7 +191,7 @@ class VideoCardH extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ),
     );
   }
 
