@@ -3,7 +3,6 @@ import 'dart:math';
 
 import 'package:PiliPlus/common/assets.dart';
 import 'package:PiliPlus/common/style.dart';
-import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:PiliPlus/common/widgets/custom_icon.dart';
 import 'package:PiliPlus/common/widgets/flutter/pop_scope.dart';
 import 'package:PiliPlus/common/widgets/flutter/popup_menu.dart';
@@ -85,6 +84,7 @@ import 'package:extended_nested_scroll_view/extended_nested_scroll_view.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, clampDouble;
 import 'package:flutter/services.dart' show SystemChrome;
 import 'package:material_ui/material_ui.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:get/get.dart';
