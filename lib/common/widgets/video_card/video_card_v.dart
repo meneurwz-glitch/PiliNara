@@ -20,6 +20,7 @@ import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:<PKG>/common/widgets/video_card/video_card_transition.dart';
 
 // 视频卡片 - 垂直布局
 class VideoCardV extends StatelessWidget {
@@ -88,12 +89,17 @@ class VideoCardV extends StatelessWidget {
       cover: videoItem.cover,
       bvid: videoItem.bvid,
     );
+    final String heroTag =
+        Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Card(
-          child: InkWell(
-            onTap: onPushDetail,
+        VideoCardHero(
+          tag: heroTag,
+          surfaceColor: transitionBackgroundOf(context),
+          child: Card(
+            child: InkWell(
+              onTap: onPushDetail,
             onLongPress: onLongPress,
             onSecondaryTap: PlatformUtils.isMobile ? null : onLongPress,
             borderRadius: const .all(.circular(12)),
