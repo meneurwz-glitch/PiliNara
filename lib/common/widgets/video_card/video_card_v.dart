@@ -164,7 +164,8 @@ class VideoCardV extends StatelessWidget {
               onRemove: onRemove,
             ),
           ),
-      ],
+        ),
+      ],    
     );
   }
 
