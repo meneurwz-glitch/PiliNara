@@ -5,6 +5,7 @@ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/progress_bar/video_progress_indicator.dart';
 import 'package:PiliPlus/common/widgets/stat/stat.dart';
 import 'package:PiliPlus/common/widgets/video_popup_menu.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:PiliPlus/http/search.dart';
 import 'package:PiliPlus/models/horizontal_video_model.dart';
 import 'package:PiliPlus/models_new/video/video_detail/dimension.dart';
