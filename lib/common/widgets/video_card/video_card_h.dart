@@ -15,8 +15,8 @@ import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:PiliPlus/utils/utils.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 
 // 视频卡片 - 水平布局
 class VideoCardH extends StatelessWidget {
@@ -42,10 +42,9 @@ class VideoCardH extends StatelessWidget {
       cover: videoItem.cover,
     );
     final theme = Theme.of(context);
-    final String heroTag =
-        Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
+    final _heroTag = Utils.makeHeroTag(videoItem.bvid ?? videoItem.aid);
     return VideoCardHero(
-      tag: heroTag,
+      tag: _heroTag,
       surfaceColor: transitionBackgroundOf(context),
       child: Material(
       type: .transparency,
@@ -95,7 +94,6 @@ class VideoCardH extends StatelessWidget {
                       title: videoItem.title,
                       dimension: dimension,
                     );
-    );
                     final String? key =
                         videoItem.bvid ?? videoItem.aid?.toString();
                     if (key != null && key.isNotEmpty) {
@@ -193,6 +191,7 @@ class VideoCardH extends StatelessWidget {
           ),
         ],
       ),
+    );
     );
   }
 
