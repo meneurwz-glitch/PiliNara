@@ -533,8 +533,9 @@ abstract final class PageUtils {
     bool off = false,
     bool isVertical = false,
     Dimension? dimension,
+    Object? heroTag,
   }) {
-    final heroTag = Utils.makeHeroTag(cid);
+    final tag = heroTag ?? Utils.makeHeroTag(cid ?? bvid ?? aid);
     final arguments = {
       'aid': aid ?? IdUtils.bv2av(bvid!),
       'bvid': bvid ?? IdUtils.av2bv(aid!),
@@ -547,10 +548,10 @@ abstract final class PageUtils {
       'progress': ?progress,
       'videoType': videoType,
       'isVertical': dimension?.isVertical ?? isVertical,
-      'heroTag': heroTag,
+      'heroTag': tag,
       ...?extraArguments,
     };
-    if (!hasPendingVideoCardTransition(heroTag)) {
+    if (!hasPendingVideoCardTransition(tag)) {
       return PageUtils.toDupNamed('/videoV', arguments: arguments, off: off);
     }
     final navigator = Get.key.currentState;
