@@ -20,8 +20,8 @@ import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:PiliPlus/utils/utils.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 
 // 视频卡片 - 垂直布局
 class VideoCardV extends StatelessWidget {
@@ -65,6 +65,7 @@ class VideoCardV extends StatelessWidget {
             title: videoItem.title,
             isVertical: isVertical,
             dimension: dimension,
+            heroTag: Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid),
           );
         }
         break;
@@ -85,20 +86,19 @@ class VideoCardV extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _heroTag = Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
     void onLongPress() => imageSaveDialog(
       title: videoItem.title,
       cover: videoItem.cover,
       bvid: videoItem.bvid,
     );
-    final String heroTag =
-        Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
-    return Stack(
+    return VideoCardHero(
+      tag: _heroTag,
+      surfaceColor: transitionBackgroundOf(context),
+      child: Stack(
       clipBehavior: Clip.none,
       children: [
-        VideoCardHero(
-          tag: heroTag,
-          surfaceColor: transitionBackgroundOf(context),
-          child: Card(
+        Card(
           child: InkWell(
             onTap: onPushDetail,
             onLongPress: onLongPress,
@@ -122,7 +122,6 @@ class VideoCardV extends StatelessWidget {
                             height: maxHeight,
                             borderRadius: const .vertical(top: .circular(12)),
                           ),
-        ),
                           if (videoItem.duration > 0)
                             PBadge(
                               bottom: 6,
@@ -167,6 +166,7 @@ class VideoCardV extends StatelessWidget {
             ),
           ),
       ],
+    );
     );
   }
 
@@ -288,3 +288,4 @@ class VideoCardV extends StatelessWidget {
     );
   }
 }
+
