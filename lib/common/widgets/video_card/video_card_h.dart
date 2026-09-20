@@ -4,6 +4,7 @@ import 'package:PiliPlus/common/widgets/image/image_save.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/progress_bar/video_progress_indicator.dart';
 import 'package:PiliPlus/common/widgets/stat/stat.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:PiliPlus/common/widgets/video_popup_menu.dart';
 import 'package:PiliPlus/http/search.dart';
 import 'package:PiliPlus/models/horizontal_video_model.dart';
@@ -13,13 +14,12 @@ import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/global_data.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
+import 'package:PiliPlus/utils/utils.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:PiliPlus/utils/utils.dart';
-import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 
 // 视频卡片 - 水平布局
-class VideoCardH extends StatelessWidget {
+class VideoCardH extends StatefulWidget {
   static final RxSet<String> clickedBvids = <String>{}.obs;
 
   const VideoCardH({
@@ -35,6 +35,36 @@ class VideoCardH extends StatelessWidget {
   final VoidCallback? onRemove;
 
   @override
+  State<VideoCardH> createState() => _VideoCardHState();
+}
+
+class _VideoCardHState extends State<VideoCardH> {
+  HorizontalVideoModel get videoItem => widget.videoItem;
+  VoidCallback? get onTap => widget.onTap;
+  VoidCallback? get onRemove => widget.onRemove;
+
+  /// 转场标识：`Utils.makeHeroTag` 每次调用都会带随机后缀，
+  /// 必须只算一次并全程复用，否则卡片与详情页的 tag 对不上，动画不会触发。
+  late String _heroTag;
+
+  String _makeHeroTag() =>
+      Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
+
+  @override
+  void initState() {
+    super.initState();
+    _heroTag = _makeHeroTag();
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoCardH oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.videoItem, videoItem)) {
+      _heroTag = _makeHeroTag();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     void onLongPress() => imageSaveDialog(
       bvid: videoItem.bvid,
@@ -42,21 +72,21 @@ class VideoCardH extends StatelessWidget {
       cover: videoItem.cover,
     );
     final theme = Theme.of(context);
-    final _heroTag = Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
-    return VideoCardHero(
-      tag: _heroTag,
-      surfaceColor: transitionBackgroundOf(context),
-      child: Material(
+    return Material(
       type: .transparency,
       child: Stack(
         clipBehavior: .none,
         children: [
-          InkWell(
-            onLongPress: onLongPress,
-            onSecondaryTap: PlatformUtils.isMobile ? null : onLongPress,
-            onTap:
-                onTap ??
-                () async {
+          // 只包点击区；右下角弹出菜单保持为兄弟节点，避免被圆角裁剪。
+          VideoCardHero(
+            tag: _heroTag,
+            surfaceColor: transitionBackgroundOf(context),
+            child: Material(
+              type: .transparency,
+              child: InkWell(
+                onLongPress: onLongPress,
+                onSecondaryTap: PlatformUtils.isMobile ? null : onLongPress,
+                onTap: onTap ?? () async {
                   if (videoItem.isPugv ?? false) {
                     PageUtils.viewPugv(seasonId: videoItem.seasonId);
                     return;
@@ -93,6 +123,7 @@ class VideoCardH extends StatelessWidget {
                       cover: videoItem.cover,
                       title: videoItem.title,
                       dimension: dimension,
+                      heroTag: _heroTag,
                     );
                     final String? key =
                         videoItem.bvid ?? videoItem.aid?.toString();
@@ -101,80 +132,82 @@ class VideoCardH extends StatelessWidget {
                     }
                   }
                 },
-            child: Padding(
-              padding: const .symmetric(
-                horizontal: Style.safeSpace,
-                vertical: 5,
-              ),
-              child: Row(
-                crossAxisAlignment: .start,
-                children: [
-                  AspectRatio(
-                    aspectRatio: Style.aspectRatio,
-                    child: LayoutBuilder(
-                      builder: (context, boxConstraints) {
-                        final double maxWidth = boxConstraints.maxWidth;
-                        final double maxHeight = boxConstraints.maxHeight;
-
-                        final progress = videoItem.progress;
-
-                        return Stack(
-                          clipBehavior: .none,
-                          children: [
-                            NetworkImgLayer(
-                              src: videoItem.cover,
-                              width: maxWidth,
-                              height: maxHeight,
-                            ),
-                            if (videoItem.badge case final badge?)
-                              PBadge(
-                                text: badge,
-                                top: 6.0,
-                                right: 6.0,
-                                type: switch (badge) {
-                                  '充电专属' => .error,
-                                  _ => .primary,
-                                },
-                              ),
-                            if (progress != null && progress != 0) ...[
-                              PBadge(
-                                text: progress == -1
-                                    ? '已看完'
-                                    : '${DurationUtils.formatDuration(progress)}/${DurationUtils.formatDuration(videoItem.duration)}',
-                                right: 6,
-                                bottom: 8,
-                                type: .gray,
-                              ),
-                              Positioned(
-                                left: 0,
-                                bottom: 0,
-                                right: 0,
-                                child: VideoProgressIndicator(
-                                  color: theme.colorScheme.primary,
-                                  backgroundColor:
-                                      theme.colorScheme.secondaryContainer,
-                                  progress: progress == -1
-                                      ? 1
-                                      : progress / videoItem.duration,
-                                ),
-                              ),
-                            ] else if (videoItem.duration > 0)
-                              PBadge(
-                                text: DurationUtils.formatDuration(
-                                  videoItem.duration,
-                                ),
-                                right: 6.0,
-                                bottom: 6.0,
-                                type: .gray,
-                              ),
-                          ],
-                        );
-                      },
-                    ),
+                child: Padding(
+                  padding: const .symmetric(
+                    horizontal: Style.safeSpace,
+                    vertical: 5,
                   ),
-                  const SizedBox(width: 10),
-                  content(theme),
-                ],
+                  child: Row(
+                    crossAxisAlignment: .start,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: Style.aspectRatio,
+                        child: LayoutBuilder(
+                          builder: (context, boxConstraints) {
+                            final double maxWidth = boxConstraints.maxWidth;
+                            final double maxHeight = boxConstraints.maxHeight;
+
+                            final progress = videoItem.progress;
+
+                            return Stack(
+                              clipBehavior: .none,
+                              children: [
+                                NetworkImgLayer(
+                                  src: videoItem.cover,
+                                  width: maxWidth,
+                                  height: maxHeight,
+                                ),
+                                if (videoItem.badge case final badge?)
+                                  PBadge(
+                                    text: badge,
+                                    top: 6.0,
+                                    right: 6.0,
+                                    type: switch (badge) {
+                                      '充电专属' => .error,
+                                      _ => .primary,
+                                    },
+                                  ),
+                                if (progress != null && progress != 0) ...[
+                                  PBadge(
+                                    text: progress == -1
+                                        ? '已看完'
+                                        : '${DurationUtils.formatDuration(progress)}/${DurationUtils.formatDuration(videoItem.duration)}',
+                                    right: 6,
+                                    bottom: 8,
+                                    type: .gray,
+                                  ),
+                                  Positioned(
+                                    left: 0,
+                                    bottom: 0,
+                                    right: 0,
+                                    child: VideoProgressIndicator(
+                                      color: theme.colorScheme.primary,
+                                      backgroundColor:
+                                          theme.colorScheme.secondaryContainer,
+                                      progress: progress == -1
+                                          ? 1
+                                          : progress / videoItem.duration,
+                                    ),
+                                  ),
+                                ] else if (videoItem.duration > 0)
+                                  PBadge(
+                                    text: DurationUtils.formatDuration(
+                                      videoItem.duration,
+                                    ),
+                                    right: 6.0,
+                                    bottom: 6.0,
+                                    type: .gray,
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      content(theme),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -191,7 +224,6 @@ class VideoCardH extends StatelessWidget {
           ),
         ],
       ),
-    ),
     );
   }
 
@@ -285,4 +317,3 @@ class VideoCardH extends StatelessWidget {
     );
   }
 }
-
