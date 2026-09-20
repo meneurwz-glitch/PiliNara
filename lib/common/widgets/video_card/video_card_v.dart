@@ -3,6 +3,7 @@ import 'package:PiliPlus/common/widgets/badge.dart';
 import 'package:PiliPlus/common/widgets/image/image_save.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/stat/stat.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:PiliPlus/common/widgets/video_popup_menu.dart';
 import 'package:PiliPlus/http/search.dart';
 import 'package:PiliPlus/models/home/rcmd/result.dart';
@@ -12,19 +13,18 @@ import 'package:PiliPlus/utils/app_scheme.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/extension/dimension_ext.dart';
+import 'package:PiliPlus/utils/global_data.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
-import 'package:PiliPlus/utils/global_data.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:PiliPlus/utils/utils.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:PiliPlus/utils/utils.dart';
-import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 
 // 视频卡片 - 垂直布局
-class VideoCardV extends StatelessWidget {
+class VideoCardV extends StatefulWidget {
   final BaseRcmdVideoItemModel videoItem;
   final VoidCallback? onRemove;
 
@@ -33,6 +33,38 @@ class VideoCardV extends StatelessWidget {
     required this.videoItem,
     this.onRemove,
   });
+
+  static final shortFormat = DateFormat('M-d');
+  static final longFormat = DateFormat('yy-M-d');
+
+  @override
+  State<VideoCardV> createState() => _VideoCardVState();
+}
+
+class _VideoCardVState extends State<VideoCardV> {
+  BaseRcmdVideoItemModel get videoItem => widget.videoItem;
+  VoidCallback? get onRemove => widget.onRemove;
+
+  /// 转场标识：`Utils.makeHeroTag` 每次调用都会带随机后缀，
+  /// 必须只算一次并全程复用，否则卡片与详情页的 tag 对不上，动画不会触发。
+  late String _heroTag;
+
+  String _makeHeroTag() =>
+      Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
+
+  @override
+  void initState() {
+    super.initState();
+    _heroTag = _makeHeroTag();
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoCardV oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.videoItem, videoItem)) {
+      _heroTag = _makeHeroTag();
+    }
+  }
 
   Future<void> onPushDetail() async {
     switch (videoItem.goto) {
@@ -65,7 +97,7 @@ class VideoCardV extends StatelessWidget {
             title: videoItem.title,
             isVertical: isVertical,
             dimension: dimension,
-            heroTag: Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid),
+            heroTag: _heroTag,
           );
         }
         break;
@@ -86,70 +118,73 @@ class VideoCardV extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final _heroTag = Utils.makeHeroTag(videoItem.cid ?? videoItem.bvid ?? videoItem.aid);
     void onLongPress() => imageSaveDialog(
       title: videoItem.title,
       cover: videoItem.cover,
       bvid: videoItem.bvid,
     );
-    return VideoCardHero(
-      tag: _heroTag,
-      surfaceColor: transitionBackgroundOf(context),
-      child: Stack(
+    return Stack(
       clipBehavior: Clip.none,
       children: [
-        Card(
-          child: InkWell(
-            onTap: onPushDetail,
-            onLongPress: onLongPress,
-            onSecondaryTap: PlatformUtils.isMobile ? null : onLongPress,
-            borderRadius: const .all(.circular(12)),
-            child: Column(
-              crossAxisAlignment: .start,
-              children: [
-                AspectRatio(
-                  aspectRatio: Style.aspectRatio,
-                  child: LayoutBuilder(
-                    builder: (context, boxConstraints) {
-                      double maxWidth = boxConstraints.maxWidth;
-                      double maxHeight = boxConstraints.maxHeight;
-                      return Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          NetworkImgLayer(
-                            src: videoItem.cover,
-                            width: maxWidth,
-                            height: maxHeight,
-                            borderRadius: const .vertical(top: .circular(12)),
-                          ),
-                          if (videoItem.duration > 0)
-                            PBadge(
-                              bottom: 6,
-                              right: 7,
-                              size: .small,
-                              type: .gray,
-                              text: DurationUtils.formatDuration(
-                                videoItem.duration,
+        // 只包卡片本体；右下角弹出菜单保持为兄弟节点，避免被圆角裁剪。
+        VideoCardHero(
+          tag: _heroTag,
+          surfaceColor: transitionBackgroundOf(context),
+          child: Card(
+            child: InkWell(
+              onTap: onPushDetail,
+              onLongPress: onLongPress,
+              onSecondaryTap: PlatformUtils.isMobile ? null : onLongPress,
+              borderRadius: const .all(.circular(12)),
+              child: Column(
+                crossAxisAlignment: .start,
+                children: [
+                  AspectRatio(
+                    aspectRatio: Style.aspectRatio,
+                    child: LayoutBuilder(
+                      builder: (context, boxConstraints) {
+                        double maxWidth = boxConstraints.maxWidth;
+                        double maxHeight = boxConstraints.maxHeight;
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            NetworkImgLayer(
+                              src: videoItem.cover,
+                              width: maxWidth,
+                              height: maxHeight,
+                              borderRadius: const .vertical(
+                                top: .circular(12),
                               ),
                             ),
-                          if (videoItem case RcmdVideoItemAppModel(
-                            :final canPlay,
-                          ) when canPlay != 1)
-                            const PBadge(
-                              text: '充电专属',
-                              top: 6,
-                              right: 6,
-                              size: .small,
-                              type: .error,
-                              fontSize: 10,
-                            ),
-                        ],
-                      );
-                    },
+                            if (videoItem.duration > 0)
+                              PBadge(
+                                bottom: 6,
+                                right: 7,
+                                size: .small,
+                                type: .gray,
+                                text: DurationUtils.formatDuration(
+                                  videoItem.duration,
+                                ),
+                              ),
+                            if (videoItem case RcmdVideoItemAppModel(
+                              :final canPlay,
+                            ) when canPlay != 1)
+                              const PBadge(
+                                text: '充电专属',
+                                top: 6,
+                                right: 6,
+                                size: .small,
+                                type: .error,
+                                fontSize: 10,
+                              ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
-                ),
-                content(context),
-              ],
+                  content(context),
+                ],
+              ),
             ),
           ),
         ),
@@ -166,7 +201,6 @@ class VideoCardV extends StatelessWidget {
             ),
           ),
       ],
-    ),
     );
   }
 
@@ -249,9 +283,6 @@ class VideoCardV extends StatelessWidget {
     );
   }
 
-  static final shortFormat = DateFormat('M-d');
-  static final longFormat = DateFormat('yy-M-d');
-
   Widget videoStat(ThemeData theme) {
     return Row(
       children: [
@@ -277,8 +308,8 @@ class VideoCardV extends StatelessWidget {
               ),
               text: DateFormatUtils.dateFormat(
                 videoItem.pubdate,
-                short: shortFormat,
-                long: longFormat,
+                short: VideoCardV.shortFormat,
+                long: VideoCardV.longFormat,
               ),
             ),
           ),
@@ -288,4 +319,3 @@ class VideoCardV extends StatelessWidget {
     );
   }
 }
-
