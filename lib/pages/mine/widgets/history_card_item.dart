@@ -1,23 +1,54 @@
 import 'package:PiliPlus/common/widgets/badge.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
 import 'package:PiliPlus/models/common/badge_type.dart';
 import 'package:PiliPlus/models_new/history/list.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
+import 'package:PiliPlus/utils/utils.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:PiliPlus/http/search.dart';
 
 /// 观看记录快捷卡片（我的页面横向列表）
-class HistoryCardItem extends StatelessWidget {
+class HistoryCardItem extends StatefulWidget {
   const HistoryCardItem({super.key, required this.item});
 
   final HistoryItemModel item;
 
+  @override
+  State<HistoryCardItem> createState() => _HistoryCardItemState();
+}
+
+class _HistoryCardItemState extends State<HistoryCardItem> {
+  HistoryItemModel get item => widget.item;
+
   // 宽高比与 HistoryItem 大图区一致（16:10）
   static const double _cardWidth = 180.0;
   static const double _cardHeight = 110.0;
+
+  /// 转场标识：`Utils.makeHeroTag` 每次调用都会带随机后缀，
+  /// 必须只算一次并全程复用，否则卡片与详情页的 tag 对不上，动画不会触发。
+  late String _heroTag;
+
+  String _makeHeroTag() => Utils.makeHeroTag(
+    item.history.cid ?? item.history.bvid ?? item.history.oid,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _heroTag = _makeHeroTag();
+  }
+
+  @override
+  void didUpdateWidget(covariant HistoryCardItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.item, item)) {
+      _heroTag = _makeHeroTag();
+    }
+  }
 
   bool get _isArticle =>
       item.history.business?.contains('article') == true;
@@ -75,6 +106,7 @@ class HistoryCardItem extends StatelessWidget {
           cid: cid,
           cover: item.cover,
           title: item.title,
+          heroTag: _heroTag,
         );
       }
     }
@@ -109,54 +141,59 @@ class HistoryCardItem extends StatelessWidget {
                 ),
               ],
             ),
-            child: ClipRRect(
-              borderRadius: const BorderRadius.all(Radius.circular(12)),
-              child: SizedBox(
-                width: _cardWidth,
-                height: _cardHeight,
-                child: Stack(
-                  clipBehavior: Clip.hardEdge,
-                  children: [
-                    NetworkImgLayer(
-                      src: coverSrc,
-                      width: _cardWidth,
-                      height: _cardHeight,
-                    ),
-                    // 右上角：直播状态 / 专栏标记 / pgc badge
-                    if (_isLive)
-                      PBadge(
-                        text: item.liveStatus == 1 ? '直播中' : '未开播',
-                        top: 6.0,
-                        right: 6.0,
-                        type: item.liveStatus == 1
-                            ? PBadgeType.primary
-                            : PBadgeType.gray,
-                      )
-                    else if (_isArticle)
-                      const PBadge(
-                        text: '专栏',
-                        top: 6.0,
-                        right: 6.0,
-                        type: PBadgeType.secondary,
-                      )
-                    else if (item.badge?.isNotEmpty == true)
-                      PBadge(
-                        text: item.badge,
-                        top: 6.0,
-                        right: 6.0,
-                        type: PBadgeType.primary,
+            // 只包封面本身：阴影由外层 DecoratedBox 负责，避免被圆角裁掉。
+            child: VideoCardHero(
+              tag: _heroTag,
+              surfaceColor: transitionBackgroundOf(context),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.all(Radius.circular(12)),
+                child: SizedBox(
+                  width: _cardWidth,
+                  height: _cardHeight,
+                  child: Stack(
+                    clipBehavior: Clip.hardEdge,
+                    children: [
+                      NetworkImgLayer(
+                        src: coverSrc,
+                        width: _cardWidth,
+                        height: _cardHeight,
                       ),
-                    // 右下角：视频进度（只显示角标文字，无进度条）
-                    if (_isVideo && hasDuration)
-                      PBadge(
-                        text: item.progress == -1
-                            ? '已看完'
-                            : '${DurationUtils.formatDuration(item.progress)}/${DurationUtils.formatDuration(item.duration)}',
-                        right: 6.0,
-                        bottom: 6.0,
-                        type: PBadgeType.gray,
-                      ),
-                  ],
+                      // 右上角：直播状态 / 专栏标记 / pgc badge
+                      if (_isLive)
+                        PBadge(
+                          text: item.liveStatus == 1 ? '直播中' : '未开播',
+                          top: 6.0,
+                          right: 6.0,
+                          type: item.liveStatus == 1
+                              ? PBadgeType.primary
+                              : PBadgeType.gray,
+                        )
+                      else if (_isArticle)
+                        const PBadge(
+                          text: '专栏',
+                          top: 6.0,
+                          right: 6.0,
+                          type: PBadgeType.secondary,
+                        )
+                      else if (item.badge?.isNotEmpty == true)
+                        PBadge(
+                          text: item.badge,
+                          top: 6.0,
+                          right: 6.0,
+                          type: PBadgeType.primary,
+                        ),
+                      // 右下角：视频进度（只显示角标文字，无进度条）
+                      if (_isVideo && hasDuration)
+                        PBadge(
+                          text: item.progress == -1
+                              ? '已看完'
+                              : '${DurationUtils.formatDuration(item.progress)}/${DurationUtils.formatDuration(item.duration)}',
+                          right: 6.0,
+                          bottom: 6.0,
+                          type: PBadgeType.gray,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
