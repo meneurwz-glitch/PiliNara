@@ -1,224 +1,325 @@
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/badge.dart';
+import 'package:PiliPlus/common/widgets/flutter/popup_menu.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
-import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
+import 'package:PiliPlus/common/widgets/progress_bar/video_progress_indicator.dart';
+import 'package:PiliPlus/common/widgets/select_mask.dart';
+import 'package:PiliPlus/http/search.dart';
+import 'package:PiliPlus/http/user.dart';
 import 'package:PiliPlus/models/common/badge_type.dart';
 import 'package:PiliPlus/models_new/history/list.dart';
+import 'package:PiliPlus/models_new/video/video_detail/dimension.dart';
+import 'package:PiliPlus/pages/common/multi_select/base.dart';
+import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
-import 'package:PiliPlus/utils/utils.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
-import 'package:PiliPlus/http/search.dart';
+import 'package:get/get.dart';
+import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:PiliPlus/common/widgets/video_card/video_card_transition.dart';
+import 'package:PiliPlus/utils/utils.dart';
 
-/// 观看记录快捷卡片（我的页面横向列表）
-class HistoryCardItem extends StatefulWidget {
-  const HistoryCardItem({super.key, required this.item});
-
+class HistoryItem extends StatelessWidget {
   final HistoryItemModel item;
+  final MultiSelectBase ctr;
+  final void Function(int kid, String business) onDelete;
 
-  @override
-  State<HistoryCardItem> createState() => _HistoryCardItemState();
-}
-
-class _HistoryCardItemState extends State<HistoryCardItem> {
-  HistoryItemModel get item => widget.item;
-
-  // 宽高比与 HistoryItem 大图区一致（16:10）
-  static const double _cardWidth = 180.0;
-  static const double _cardHeight = 110.0;
-
-  /// 转场标识：`Utils.makeHeroTag` 每次调用都会带随机后缀，
-  /// 必须只算一次并全程复用，否则卡片与详情页的 tag 对不上，动画不会触发。
-  late String _heroTag;
-
-  String _makeHeroTag() => Utils.makeHeroTag(
-    item.history.cid ?? item.history.bvid ?? item.history.oid,
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _heroTag = _makeHeroTag();
-  }
-
-  @override
-  void didUpdateWidget(covariant HistoryCardItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.item, item)) {
-      _heroTag = _makeHeroTag();
-    }
-  }
-
-  bool get _isArticle =>
-      item.history.business?.contains('article') == true;
-
-  bool get _isLive => item.history.business == 'live';
-
-  bool get _isPgc => item.history.business == 'pgc';
-
-  bool get _isCheese => item.history.business == 'cheese';
-
-  bool get _isVideo => !_isArticle && !_isLive && !_isPgc && !_isCheese;
-
-  void _onTap() async {
-    final business = item.history.business;
-    if (_isArticle) {
-      PageUtils.toDupNamed(
-        '/articlePage',
-        parameters: {
-          'id': business == 'article-list'
-              ? '${item.history.cid}'
-              : '${item.history.oid}',
-          'type': 'read',
-        },
-      );
-    } else if (_isLive) {
-      if (item.liveStatus == 1) {
-        PageUtils.toLiveRoom(item.history.oid);
-      } else {
-        SmartDialog.showToast('直播未开播');
-      }
-    } else if (_isPgc) {
-      PageUtils.viewPgc(epId: item.history.epid);
-    } else if (_isCheese) {
-      if (item.uri?.isNotEmpty == true) {
-        PageUtils.viewPgcFromUri(
-          item.uri!,
-          isPgc: false,
-          aid: item.history.oid,
-        );
-      }
-    } else {
-      final int aid = item.history.oid!;
-      final String bvid = item.history.bvid ?? IdUtils.av2bv(aid);
-      int? cid =
-          item.history.cid ??
-          await SearchHttp.ab2c(
-            aid: aid,
-            bvid: bvid,
-            part: item.history.page,
-          );
-      if (cid != null) {
-        PageUtils.toVideoPage(
-          aid: aid,
-          bvid: bvid,
-          cid: cid,
-          cover: item.cover,
-          title: item.title,
-          heroTag: _heroTag,
-        );
-      }
-    }
-  }
+  const HistoryItem({
+    super.key,
+    required this.item,
+    required this.ctr,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hasDuration = item.duration != null && item.duration != 0;
-    final coverSrc = item.cover?.isNotEmpty == true
-        ? item.cover
-        : item.covers?.firstOrNull ?? '';
+    int aid = item.history.oid!;
+    String bvid = item.history.bvid ?? IdUtils.av2bv(aid);
+    final business = item.history.business;
+    final enableMultiSelect = ctr.enableMultiSelect.value;
 
-    return GestureDetector(
-      onTap: _onTap,
-      behavior: HitTestBehavior.opaque,
+    final onLongPress = enableMultiSelect
+        ? null
+        : () => ctr
+            ..enableMultiSelect.value = true
+            ..onSelect(item);
+
+    // 转场标识只算一次并全程复用（makeHeroTag 带随机后缀）。
+    final heroTag = Utils.makeHeroTag(item.history.cid ?? bvid ?? aid);
+
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: enableMultiSelect
+            ? () => ctr.onSelect(item)
+            : () async {
+                if (business?.contains('article') == true) {
+                  PageUtils.toDupNamed(
+                    '/articlePage',
+                    parameters: {
+                      'id': business == 'article-list'
+                          ? '${item.history.cid}'
+                          : '${item.history.oid}',
+                      'type': 'read',
+                    },
+                  );
+                } else if (business == 'live') {
+                  if (item.liveStatus == 1) {
+                    PageUtils.toLiveRoom(item.history.oid);
+                  } else {
+                    SmartDialog.showToast('直播未开播');
+                  }
+                } else if (business == 'pgc') {
+                  PageUtils.viewPgc(
+                    epId: item.history.epid,
+                    progress: item.playbackProgress,
+                  );
+                } else if (business == 'cheese') {
+                  if (item.uri?.isNotEmpty == true) {
+                    PageUtils.viewPgcFromUri(
+                      item.uri!,
+                      isPgc: false,
+                      aid: item.history.oid,
+                      progress: item.playbackProgress,
+                    );
+                  }
+                } else {
+                  int? cid = item.history.cid;
+                  Dimension? dimension;
+                  if (cid == null) {
+                    if (await SearchHttp.ab2cWithDimension(
+                          aid: aid,
+                          bvid: bvid,
+                          part: item.history.page,
+                        )
+                        case final res?) {
+                      cid = res.cid;
+                      dimension = res.dimension;
+                    }
+                  }
+                  if (cid != null) {
+                    // TODO: dimension
+                    PageUtils.toVideoPage(
+                      aid: aid,
+                      bvid: bvid,
+                      cid: cid,
+                      cover: item.cover,
+                      title: item.title,
+                      dimension: dimension,
+                      progress: item.playbackProgress,
+                      heroTag: heroTag,
+                    );
+                  }
+                }
+              },
+        onLongPress: onLongPress,
+        onSecondaryTap: PlatformUtils.isMobile ? null : onLongPress,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Style.safeSpace,
+                vertical: 5,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  VideoCardHero(
+                    tag: heroTag,
+                    surfaceColor: transitionBackgroundOf(context),
+                    child: AspectRatio(
+                      aspectRatio: Style.aspectRatio,
+                      child: LayoutBuilder(
+                        builder: (context, boxConstraints) {
+                          double maxWidth = boxConstraints.maxWidth;
+                          double maxHeight = boxConstraints.maxHeight;
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              NetworkImgLayer(
+                                src: item.cover?.isNotEmpty == true
+                                    ? item.cover
+                                    : item.covers?.firstOrNull ?? '',
+                                width: maxWidth,
+                                height: maxHeight,
+                              ),
+                              if (hasDuration)
+                                PBadge(
+                                  text: item.progress == -1
+                                      ? '已看完'
+                                      : '${DurationUtils.formatDuration(item.progress)}/${DurationUtils.formatDuration(item.duration)}',
+                                  right: 6.0,
+                                  bottom: 8.0,
+                                  type: PBadgeType.gray,
+                                ),
+                              if (item.isFav == 1)
+                                const PBadge(
+                                  text: '已收藏',
+                                  top: 6.0,
+                                  right: 6.0,
+                                  type: PBadgeType.gray,
+                                )
+                              else if (item.badge?.isNotEmpty == true)
+                                PBadge(
+                                  text: item.badge,
+                                  top: 6.0,
+                                  right: 6.0,
+                                  type: business == 'live' && item.liveStatus != 1
+                                      ? PBadgeType.gray
+                                      : PBadgeType.primary,
+                                ),
+                              if (hasDuration &&
+                                  item.progress != null &&
+                                  item.progress != 0)
+                                Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  child: VideoProgressIndicator(
+                                    color: theme.colorScheme.primary,
+                                    backgroundColor:
+                                        theme.colorScheme.secondaryContainer,
+                                    progress: item.progress == -1
+                                        ? 1
+                                        : item.progress! / item.duration!,
+                                  ),
+                                ),
+                              Positioned.fill(
+                                child: selectMask(
+                                  theme.colorScheme,
+                                  item.checked,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  content(theme),
+                ],
+              ),
+            ),
+            Positioned(
+              right: 12,
+              bottom: 0,
+              width: 29,
+              height: 29,
+              child: StaticPopupMenuButton(
+                padding: EdgeInsets.zero,
+                tooltip: '功能菜单',
+                icon: Icon(
+                  Icons.more_vert_outlined,
+                  color: theme.colorScheme.outline,
+                  size: 18,
+                ),
+                itemBuilder: (_) => [
+                  if (item.authorMid != null &&
+                      item.authorName?.isNotEmpty == true)
+                    PopupMenuItem(
+                      onTap: () => Get.toNamed('/member?mid=${item.authorMid}'),
+                      height: 38,
+                      child: Row(
+                        children: [
+                          const Icon(
+                            MdiIcons.accountCircleOutline,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '访问：${item.authorName}',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (business != 'pgc' &&
+                      item.badge != '番剧' &&
+                      item.tagName?.contains('动画') != true &&
+                      business != 'live' &&
+                      business?.contains('article') != true)
+                    PopupMenuItem(
+                      onTap: () =>
+                          UserHttp.toViewLater(bvid: item.history.bvid),
+                      height: 38,
+                      child: const Row(
+                        children: [
+                          Icon(Icons.watch_later_outlined, size: 16),
+                          SizedBox(width: 6),
+                          Text('稍后再看', style: TextStyle(fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  PopupMenuItem(
+                    onTap: () => onDelete(item.kid!, business!),
+                    height: 38,
+                    child: const Row(
+                      children: [
+                        Icon(Icons.close_outlined, size: 16),
+                        SizedBox(width: 6),
+                        Text('删除记录', style: TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget content(ThemeData theme) {
+    return Expanded(
       child: Column(
+        spacing: 2,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 封面区域
-          DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: const BorderRadius.all(Radius.circular(12)),
-              boxShadow: [
-                BoxShadow(
-                  color: theme.colorScheme.onInverseSurface.withValues(
-                    alpha: 0.4,
-                  ),
-                  offset: const Offset(6, -8),
-                  blurRadius: 0.0,
-                  spreadRadius: 0.0,
-                ),
-              ],
+          Text(
+            item.title!,
+            style: TextStyle(
+              fontSize: theme.textTheme.bodyMedium!.fontSize,
+              height: 1.42,
+              letterSpacing: 0.3,
             ),
-            // 只包封面本身：阴影由外层 DecoratedBox 负责，避免被圆角裁掉。
-            child: VideoCardHero(
-              tag: _heroTag,
-              surfaceColor: transitionBackgroundOf(context),
-              child: ClipRRect(
-                borderRadius: const BorderRadius.all(Radius.circular(12)),
-                child: SizedBox(
-                  width: _cardWidth,
-                  height: _cardHeight,
-                  child: Stack(
-                    clipBehavior: Clip.hardEdge,
-                    children: [
-                      NetworkImgLayer(
-                        src: coverSrc,
-                        width: _cardWidth,
-                        height: _cardHeight,
-                      ),
-                      // 右上角：直播状态 / 专栏标记 / pgc badge
-                      if (_isLive)
-                        PBadge(
-                          text: item.liveStatus == 1 ? '直播中' : '未开播',
-                          top: 6.0,
-                          right: 6.0,
-                          type: item.liveStatus == 1
-                              ? PBadgeType.primary
-                              : PBadgeType.gray,
-                        )
-                      else if (_isArticle)
-                        const PBadge(
-                          text: '专栏',
-                          top: 6.0,
-                          right: 6.0,
-                          type: PBadgeType.secondary,
-                        )
-                      else if (item.badge?.isNotEmpty == true)
-                        PBadge(
-                          text: item.badge,
-                          top: 6.0,
-                          right: 6.0,
-                          type: PBadgeType.primary,
-                        ),
-                      // 右下角：视频进度（只显示角标文字，无进度条）
-                      if (_isVideo && hasDuration)
-                        PBadge(
-                          text: item.progress == -1
-                              ? '已看完'
-                              : '${DurationUtils.formatDuration(item.progress)}/${DurationUtils.formatDuration(item.duration)}',
-                          right: 6.0,
-                          bottom: 6.0,
-                          type: PBadgeType.gray,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            maxLines: item.videos! > 1 ? 1 : 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 8),
-          // 标题
-          SizedBox(
-            width: _cardWidth,
-            child: Text(
-              ' ${item.title ?? ''}',
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
-          // 副标题（作者名 / showTitle）
-          SizedBox(
-            width: _cardWidth,
-            child: Text(
-              ' ${item.authorName ?? item.showTitle ?? ''}',
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-              style: theme.textTheme.labelSmall!.copyWith(
+          if (item.history.business == 'pgc' &&
+              item.showTitle?.isNotEmpty == true)
+            Text(
+              item.showTitle!,
+              style: TextStyle(
+                fontSize: 13,
                 color: theme.colorScheme.outline,
               ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          const Spacer(),
+          if (item.authorName?.isNotEmpty == true)
+            Text(
+              item.authorName!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: theme.textTheme.labelMedium!.fontSize,
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          Text(
+            DateFormatUtils.chatFormat(item.viewAt!, isHistory: true),
+            style: TextStyle(
+              fontSize: theme.textTheme.labelMedium!.fontSize,
+              color: theme.colorScheme.outline,
             ),
           ),
         ],
