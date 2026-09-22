@@ -14,6 +14,30 @@ const double _cardRadius = 12;
 /// 且随展开进度线性加深 —— 起点 0、到位时到满值。
 const double _scrimOpacity = 0.35;
 
+/// 横卡专用：详情页之上先盖一层「衬底色」遮罩，随转场进度淡出。
+///
+/// 为什么只有横卡需要：横卡矩形是横向的（宽 > 高），而详情页是 9:20 竖屏。
+/// 用 `BoxFit.cover` 把整页塞进这个横向矩形时，缩放比由**宽度**决定，
+/// 页面会被放大到远超矩形高度 —— 起飞那一帧看到的是"详情页顶部被放大的一小块"，
+/// 而不是卡片原貌（左封面 + 右标题），这一段内容跳变比竖卡明显得多。
+/// 盖一层卡片所在页面的背景色（也就是先前 v2 / v7 衬底方案用的那个颜色），
+/// 等页面长得差不多了再露出来，跳变就被藏在这层颜色里。
+///
+/// 遮罩只铺满**页面矩形本身**（跟着矩形的长大走、跟着卡片圆角裁），
+/// 页面之外的首页区域照旧交给上面那层黑幕压暗 —— 若铺满整屏，浅色主题下
+/// 开场就是整屏泛白，那是之前专门修掉的问题。
+const double _maskHoldUntil = 0.22; // 这段进度内完全不透明，遮住最乱的开场
+const double _maskFadeEnd = 0.7; // 到这里遮罩已经全透明
+const Curve _maskFadeCurve = Interval(
+  _maskHoldUntil,
+  _maskFadeEnd,
+  curve: Curves.easeOutCubic,
+);
+
+/// 卡片宽 / 高 ≥ 这个比值就当横卡。`video_card_h` ≈ 1.8，
+/// `video_card_v` ≈ 0.9，中间留了足够余量。
+const double _landscapeCardRatio = 1.35;
+
 /// 展开曲线。页面矩形从「卡片矩形」插值到「整个视口」，走的就是这条曲线。
 ///
 /// 手感旋钮：0.82 这个端点决定"多大比例时就已经铺满" —— 调小（如 0.72）会让
@@ -29,7 +53,16 @@ const Curve _containerCurve = Interval(
 const double _entryContentReadyAt = 0.62;
 const Duration videoPageTransitionDuration = Duration(milliseconds: 400);
 const Duration videoPageReverseTransitionDuration = Duration(milliseconds: 320);
-({Object tag, RenderBox box, BuildContext context})? _pendingVideoTransition;
+/// 一次转场所需要的全部信息：源卡片本体（量起点矩形）、卡片所在页面的
+/// 背景色（横卡遮罩用）、以及那个 context（保留给调试用）。
+typedef _PendingVideoTransition = ({
+  Object tag,
+  RenderBox box,
+  BuildContext context,
+  Color substrate,
+});
+
+_PendingVideoTransition? _pendingVideoTransition;
 final _enteringVideoPages = <Object, Completer<bool>>{};
 
 /// Begin decoder setup only after the page is visibly taking over the card.
@@ -78,7 +111,7 @@ Color transitionBackgroundOf(BuildContext context) {
 bool hasPendingVideoCardTransition(Object tag) =>
     _pendingVideoTransition?.tag == tag;
 
-// Keep only geometry: tapping no longer captures or filters a full-screen image.
+/// Keep only geometry: tapping no longer captures or filters a full-screen image.
 void _prepareVideoTransition(Object tag, BuildContext context) {
   final box = context.findRenderObject();
   if (box is RenderBox && box.hasSize) {
@@ -86,6 +119,11 @@ void _prepareVideoTransition(Object tag, BuildContext context) {
       tag: tag,
       box: box,
       context: context,
+      // 卡片所在页面的背景色 —— 先前 v2 / v7 衬底方案用的就是这个颜色
+      // （`transitionBackgroundOf` 命中最近的 Material 的 color，浅色主题下
+      // 通常就是 canvasColor ≈ #FAFAFA）。在这里、也就是手指按下时量一次：
+      // 详情页构建时卡片已经被 Hero 摘掉 child，那时再遍历它的祖先树不安全。
+      substrate: transitionBackgroundOf(context),
     );
   }
 }
@@ -340,11 +378,19 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
   Rect? _sourceRect;
   bool _entryCompleted = false;
 
+  /// 横卡遮罩用的颜色：卡片所在页面的背景色（按下时量好的那份）。
+  /// 量不到时退回页面端传进来的 `surfaceColor`。
+  late final Color _substrate;
+
   @override
   void initState() {
     super.initState();
-    if (hasPendingVideoCardTransition(widget.tag)) {
-      _sourceBox = _pendingVideoTransition!.box;
+    final pending = hasPendingVideoCardTransition(widget.tag)
+        ? _pendingVideoTransition
+        : null;
+    _substrate = pending?.substrate ?? widget.surfaceColor;
+    if (pending != null) {
+      _sourceBox = pending.box;
       _sourceRect = _sourceBox!.localToGlobal(Offset.zero) & _sourceBox!.size;
       _pendingVideoTransition = null;
     }
@@ -425,6 +471,14 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
             final pageRect = returning
                 ? Rect.lerp(viewport, source, contraction)!
                 : Rect.lerp(source, viewport, expansion)!;
+            // 横卡才盖衬底遮罩（判据用源卡片的宽高比，卡片文件无需改动）。
+            //
+            // 用 `animation.value`（时间轴进度）而不是上面那条展开曲线：要求就是
+            // "进行到 70% 时遮罩透明"，直接对齐时间轴最直观，回程时 value 反向
+            // 递减、遮罩重新出现，收回到卡片时正好重新盖满，两边对称。
+            final maskAlpha = source.width >= source.height * _landscapeCardRatio
+                ? 1 - _maskFadeCurve.transform(animation.value)
+                : 0.0;
             return Stack(
               fit: StackFit.expand,
               clipBehavior: Clip.none,
@@ -456,16 +510,34 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
                     borderRadius: const BorderRadius.all(
                       Radius.circular(_cardRadius),
                     ),
-                    child: FittedBox(
-                      // cover = 等比缩放到填满矩形，多出来的部分裁掉。
-                      // 用 fill 会把页面拉变形（卡片矩形接近方形、视口是 9:20），
-                      // 用 contain 则会在矩形里留出空白边。
-                      fit: BoxFit.cover,
-                      alignment: Alignment.topCenter,
-                      child: SizedBox.fromSize(
-                        size: size,
-                        child: RepaintBoundary(child: child),
-                      ),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        FittedBox(
+                          // cover = 等比缩放到填满矩形，多出来的部分裁掉。
+                          // 用 fill 会把页面拉变形（卡片矩形接近方形、视口是 9:20），
+                          // 用 contain 则会在矩形里留出空白边。
+                          fit: BoxFit.cover,
+                          alignment: Alignment.topCenter,
+                          child: SizedBox.fromSize(
+                            size: size,
+                            child: RepaintBoundary(child: child),
+                          ),
+                        ),
+                        // 横卡：衬底色遮罩，压在页面之上、随矩形长大、跟圆角一起裁。
+                        // 放进 ClipRRect 内部（而不是 Stack 最外层）是关键 ——
+                        // 这样它天然贴着页面矩形的边界和圆角，不会盖到页面之外的
+                        // 首页区域上去。
+                        if (maskAlpha > 0.002)
+                          Positioned.fill(
+                            key: const ValueKey('video-transition-card-mask'),
+                            child: IgnorePointer(
+                              child: ColoredBox(
+                                color: _substrate.withValues(alpha: maskAlpha),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
