@@ -572,9 +572,11 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
                             // 9:20），用 contain 则会在矩形里留出空白边。
                             fit: BoxFit.cover,
                             alignment: Alignment.topCenter,
-                            // 放大方向上 mipmap（medium）只会更糊、还要每帧生成
-                            // mipmap 链；双线性（low）这里更快也更锐。
-                            filterQuality: FilterQuality.low,
+                            // 注意：别再想着给 FittedBox 传 filterQuality —— 这个
+                            // 版本（3.47）里它连 widget 带 RenderFittedBox 都已经
+                            // 没有这个参数了，写了直接编译失败（"No named parameter
+                            // with the name 'filterQuality'"）。采样质量由框架内部
+                            // 决定，这里没有旋钮，也不需要。
                             child: child,
                           )
                         : OverflowBox(
@@ -898,6 +900,10 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
                           // 卡片被放大数倍，mipmap（medium）在放大方向上只会更糊、
                           // 还多一道每帧生成 mipmap 链的开销；双线性（low）这里
                           // 既更快也更锐。
+                          //
+                          // `Transform.scale` 有 `filterQuality` 这个参数，可以写；
+                          // 别顺手照抄到上面的 `FittedBox` 上 —— 那个没有（细节见
+                          // 页面那处的注释）。
                           filterQuality: FilterQuality.low,
                           child: RepaintBoundary(
                             // 卡片内容（封面图 + 标题）只按原尺寸光栅化一次，
