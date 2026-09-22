@@ -16,71 +16,113 @@ const double _scrimOpacity = 0.35;
 
 // ── 详情页之上那层卡片什么时候淡掉 ──
 //
-//   ① 卡片本体（封面 + 标题 + 底色）   0.22 ~ 0.66   ← [_cardLayerFadeCurve]
-//   ② 详情页自己（一直在长大，不淡）
+// 打开 / 关闭各一套窗口 —— 因为两个方向配的是两条不同的曲线（见下方「曲线调参区」）：
 //
-// 用 `animation.value`（时间轴进度）驱动，去程回程共用一套 —— 回程 value 递减，
-// 卡片自动重新浮现、收回卡片时正好盖回原位，不需要判断方向。
+//   打开：0.10 ~ 0.46   ← [_cardLayerOpenFadeCurve]   （[_openCurve] 前 40% 就跑完几何）
+//   关闭：0.22 ~ 0.66   ← [_cardLayerCloseFadeCurve]  （[_closeCurve] 前段慢、中段猛）
 //
-// 卡片淡到 0.66 就没了，那一刻页面只铺到约 63%，剩下 37% 是"裸着长"的。之所以
-// 能接受：页面内容和卡片是同一套画面（封面 → 播放器、标题 → 标题），
-// `BoxFit.cover` 又保证边缘一直对齐，所以露出来的是"已经长开的同一张画面"，
-// 不再是早期那种"详情页顶部被放大的一小块"跳变。中间垫一层纯色确实更平滑，
-// 但那会多出一段"什么都没有的纯色"时间，观感上更慢 —— 这一版按"快"取舍掉了。
-const double _cardLayerHoldUntil = 0.22;
-const double _cardLayerFadeEnd = 0.66;
-const Curve _cardLayerFadeCurve = Interval(
-  _cardLayerHoldUntil,
-  _cardLayerFadeEnd,
+// 两个方向都用 `animation.value`（时间轴进度）驱动：去程 0 → 1、回程 1 → 0，同一条
+// 曲线在两个方向上都自动是"从有到无"，不需要判断方向。
+//
+// 打开方向为什么要提前这么多：打开曲线是"一上来就全力"，0.22 时页面已经铺到 0.76，
+// 卡片要是还满不透明地停在那儿，就成了"一张被放大好几倍、还糊着的卡片"霸屏 —— 等到
+// 0.46 才淡尽，页面那时已铺到 0.94。提前到 0.10 起淡还有个好处：淡出有
+// 0.36 × 350ms ≈ 126ms，足够读成一次"溶解"而不是硬切。
+//
+// 卡片淡尽时页面已经铺到 0.94 以上，所以没有"裸着长"的空档 —— 早先那层纯色衬底
+// 本来是用来遮这一段的，现在这条曲线自己就把空档填掉了。
+const double _cardLayerOpenHoldUntil = 0.10;
+const double _cardLayerOpenFadeEnd = 0.46;
+const Curve _cardLayerOpenFadeCurve = Interval(
+  _cardLayerOpenHoldUntil,
+  _cardLayerOpenFadeEnd,
+  curve: Curves.easeOutCubic,
+);
+
+const double _cardLayerCloseHoldUntil = 0.22;
+const double _cardLayerCloseFadeEnd = 0.66;
+const Curve _cardLayerCloseFadeCurve = Interval(
+  _cardLayerCloseHoldUntil,
+  _cardLayerCloseFadeEnd,
   curve: Curves.easeOutCubic,
 );
 
 // ─────────────────────────── 曲线调参区 ───────────────────────────
-// 整个转场一共四条曲线，按「谁在动」分清楚，改的时候别串味：
+// 整个转场一共五条曲线，按「哪个方向、谁在动」分清楚，改的时候别串味：
 //
-//   _containerCurve        页面矩形从卡片矩形长到全屏 —— **主曲线**，影响最大
-//   _cardLayerFadeCurve    上层卡片（封面 + 标题 + 底色）的淡出（0.22 ~ 0.66）
-//   Curves.easeInOutCubic  返回方向的收拢（见 returning 分支与 _VideoCardRectTween）
-//   Curves.linear          Hero 自身的插值（不参与视觉，只为拿进度）
+//   _openCurve                打开：页面矩形从卡片矩形长到全屏 —— **主曲线**
+//   _closeCurve               关闭：同一段矩形收回去（见 returning 分支、飞行层，
+//                             以及 _VideoCardRectTween 的 returning 标志）
+//   _cardLayerOpenFadeCurve   打开：上层卡片（封面 + 标题 + 底色）淡出
+//   _cardLayerCloseFadeCurve  关闭：同上的淡出（卡片重新浮现）
+//   Curves.linear             Hero 自身的插值（不参与视觉，只为拿进度）
+//
+// 打开和关闭是两条**互相独立**的曲线（按曲线调试页给的参数分别指定），改一条不会
+// 影响另一条；但每条主曲线各自在三个地方被用着 —— 页面构建体、飞行层构建体、
+// `_VideoCardRectTween`。改主曲线时要确认这三处仍然是同一个名字。
 //
 // 参数写法与 CSS 的 `cubic-bezier(x1, y1, x2, y2)` 一一对应：
 // 控制点固定在 (0,0) 和 (1,1)，四个值就是中间两个控制点。
 // ─────────────────────────────────────────────────────────────────
 
-/// 展开曲线（主曲线）。页面矩形从「卡片矩形」插值到「整个视口」，走的就是它。
+/// ── 打开曲线（去程主曲线）──
 ///
-/// 现在用的是一条三次贝塞尔 `cubic-bezier(0.54, 0.15, 0.68, 0.88)`：
+/// 页面矩形从「卡片矩形」长到「整个视口」走的就是它 —— 转场里影响最大的一条。
 ///
-/// | 时间 | 0.28 | 0.49 | 0.58 | 0.70 | 0.82 | 1.00 |
-/// |---|---|---|---|---|---|---|
-/// | 进度 | 0.15 | 0.38 | 0.51 | 0.69 | 0.86 | 1.00 |
+/// 现在是 `cubic-bezier(0.22, 0.77, 0.08, 1.0)`：
 ///
-/// 也就是**起步明显蓄力**（前 30% 只走完 15%）、中段最猛、
-/// 最后 18% 再收一下尾。全程都在长大，不像上一版（`Interval(0, 0.82)`）
-/// 那样 82% 就已经铺满、尾巴停滞。
+/// | 时间 | 0.05 | 0.10 | 0.15 | 0.22 | 0.30 | 0.40 | 0.66 | 1.00 |
+/// |---|---|---|---|---|---|---|---|---|
+/// | 展开 | 0.19 | 0.40 | 0.59 | 0.76 | 0.86 | 0.92 | 0.98 | 1.00 |
+///
+/// 手感：**一上来就是全力**（前 10% 时间已经铺开 40%，0.125 处过半，斜率峰值
+/// 在 x=0.09、约 4.3 —— 比内置任何一条都陡），中后段一路大幅减速，最后 60% 的
+/// 时间只补完最后 8%。读起来是"啪"地弹开、再缓缓坐实。
+///
+/// 因为它前 40% 就把几何跑完了，卡片淡出的窗口也得跟着前移，否则卡片会以放大后
+/// 的姿态在原地多停一截 —— 见 [_cardLayerOpenFadeCurve]。
 ///
 /// 想换手感：直接改这 4 个数即可，或者换回内置曲线，例如
 /// `Curves.easeInOutCubicEmphasized` / `Curves.fastOutSlowIn` /
 /// `Curves.easeOutCubic`；要「提前铺满」就套一层 `Interval(0, 0.82, curve: ...)`。
-const Curve _containerCurve = Cubic(0.54, 0.15, 0.68, 0.88);
+const Curve _openCurve = Cubic(0.22, 0.77, 0.08, 1.0);
+
+/// ── 关闭曲线（回程）──
+///
+/// 就是先前打开动画用的那条 `cubic-bezier(0.54, 0.15, 0.68, 0.88)`，现在挪到
+/// 关闭方向 —— 收缩进度走它：
+///
+/// | 时间 | 0.28 | 0.49 | 0.58 | 0.70 | 0.82 | 1.00 |
+/// |---|---|---|---|---|---|---|
+/// | 收缩 | 0.15 | 0.38 | 0.51 | 0.69 | 0.86 | 1.00 |
+///
+/// 手感：**先顿一下**（前 30% 只收回 15%）→ 中段最猛地收 → 末尾收住、稳稳落回
+/// 卡片。它和 [_cardLayerCloseFadeCurve] 是配套的（那组窗口原本就是按这条曲线的
+/// 形状调出来的），所以关闭方向不需要额外补偿。
+const Curve _closeCurve = Cubic(0.54, 0.15, 0.68, 0.88);
 
 // The player decoder is heavier than ordinary page UI. Start it only after
 // that UI is visible, and keep it clear of the busiest stretch of the flight
 // (the page is still changing scale and the card layer is still compositing).
 // Starting it mid-animation makes decoder warm-up steal frames from the
 // animation, which reads as stutter.
-const double _entryContentReadyAt = 0.85;
+//
+// `_openCurve` 是"一上来就全力"：几何 0.36 处就铺到 0.9，卡片 0.46 淡尽 ——
+// 也就是说 0.55 之后画面上已经没有东西在动了（矩形只剩最后 1% 的微调）。
+// 所以这里从 0.85 收到 0.62：既落在"看得见的动画都结束了"之后，又把起播提前约
+// 80ms。实机上若发现收尾掉帧，调回 0.85 即可（代价是起播晚约 80ms）。
+const double _entryContentReadyAt = 0.62;
 
 /// ── 转场速度 ──
 ///
 /// 去程 400 → 350ms、回程 320 → 280ms（各快约 12%）。之所以能直接砍时长而不是
-/// 动曲线：主曲线 `_containerCurve` 的形状决定"每一段各占多少比例"，它跟总时长
-/// 无关 —— 缩短时长整条节奏等比加快，手感不变，只是更快。
+/// 动曲线：主曲线的形状决定"每一段各占多少比例"，它跟总时长无关 —— 缩短时长
+/// 整条节奏等比加快，手感不变，只是更快。
 ///
-/// 想再快就继续往下调这两行（比如 320 / 260，那是"很快"；300 / 240 已经接近
-/// Material 里长篇转场的下限，再短会显得生硬）。真要调到那个程度，建议把
-/// `_cardLayerFadeEnd` 一起调小（如 0.6，让卡片更早退场），否则卡片会在已经很快
-/// 的收尾里显得恋恋不舍。
+/// ⚠️ 打开方向现在是一条"前重"曲线：350ms 里真正看得见的运动只占前 ~40%
+/// （约 140ms），后 60% 几乎看不出变化。**别因为"后半段好像没动"就去压总时长**
+/// —— 打开方向想再快，应该改 `_openCurve` 的形状（比如把 P2 的 y 调到 0.9、
+/// 或让曲线更早到顶）。关闭曲线相反，它匀匀地填满了整个 280ms，压时长对它有效。
 const Duration videoPageTransitionDuration = Duration(milliseconds: 350);
 const Duration videoPageReverseTransitionDuration = Duration(milliseconds: 280);
 
@@ -139,7 +181,7 @@ Color transitionBackgroundOf(BuildContext context) {
 
 // ────────────────────────── 这一版转场长什么样 ──────────────────────────
 //
-// 两层叠在一起，共用一个矩形、一条曲线、一个进度：
+// 两层叠在一起，共用一个矩形、一个进度（去程/回程各一条主曲线，见「曲线调参区」）：
 //
 //   ① 详情页自己长大。`pageRect` 从「卡片矩形」插值到「整个视口」，页面内容用
 //      `BoxFit.cover` 缩放进这个矩形 —— 所以文字和图片是跟着一起放大的，读起来
@@ -149,7 +191,7 @@ Color transitionBackgroundOf(BuildContext context) {
 //      `pageRect` 那一条 —— 卡片跟着页面一起放大、一起往左上角移，随进度淡出。
 //      它负责把"页面矩形刚越过卡片位置、里面显示的是详情页顶部被放大的一小块"
 //      这一段藏起来。竖卡横卡一视同仁 —— 横卡矩形是横向的，那一段跳变最明显。
-//      0.66 之后卡片退场，页面裸着长完最后一段（见上方常量区的说明）。
+//      淡出窗口去程回程不同（打开 0.10~0.46、关闭 0.22~0.66，见上方常量区）。
 //
 // 为什么用卡片本体而不是一块纯色：颜色只能蒙住形状，蒙不住内容；横卡上
 // "左封面 + 标题"和"被放大的详情页顶部"差得远，只有把卡片原样盖着才读不出切换。
@@ -178,10 +220,13 @@ class _VideoCardRectTween extends RectTween {
 
   @override
   Rect? lerp(double t) => returning
-      // 返回端锚点现在就是视口本身（不再是外扩后的矩形），所以直接用
-      // easeInOutCubic 从视口收拢回卡片位置即可。
-      ? Rect.lerp(begin, end, Curves.easeInOutCubic.transform(t))
-      : Rect.lerp(begin, end, _containerCurve.transform(t));
+      // 回程的 begin/end 就是「视口 → 卡片」，t 从 0 走到 1，直接用 [_closeCurve]
+      // 收拢回卡片位置即可；去程（push）用 [_openCurve] 展开。
+      //
+      // Hero 取这条 tween 是有方向的：push 用目标 hero（详情页那头，`returning`
+      // 为 false），pop 用源 hero（卡片那头，构造时就传了 `returning: true`）。
+      ? Rect.lerp(begin, end, _closeCurve.transform(t))
+      : Rect.lerp(begin, end, _openCurve.transform(t));
 }
 
 /// Retain GetX's playback/controller lifecycle, replacing only the visuals.
@@ -505,8 +550,8 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
                 ? box.localToGlobal(Offset.zero)
                 : Offset.zero;
             final source = _sourceRect!.shift(-origin);
-            final expansion = _containerCurve.transform(animation.value);
-            final contraction = Curves.easeInOutCubic.transform(
+            final expansion = _openCurve.transform(animation.value);
+            final contraction = _closeCurve.transform(
               1 - animation.value,
             );
             // 页面矩形：去程从「卡片矩形」插值到「整个视口」，回程反过来。
@@ -519,7 +564,7 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
             // 页面之上那一层卡片在飞行层里，由 [_buildFlightShuttle] 负责 ——
             // 它按**同一条曲线、同一组端点**算出自己的矩形（见 [_FlightCardLayer]），
             // 所以两边永远是同一个矩形、同一时刻，卡片跟着页面一起长大。
-            // 改这里的写法时，那边要一起改（两处用的是同一个 `_containerCurve`）。
+            // 改这里的曲线时，飞行层构建体和 `_VideoCardRectTween` 要一起改。
             final pageRect = returning
                 ? Rect.lerp(viewport, source, contraction)!
                 : Rect.lerp(source, viewport, expansion)!;
@@ -653,7 +698,8 @@ class _CardSurface extends StatelessWidget {
 /// 飞行层 = **卡片本体**，跟着详情页一起放大、一起移动。
 ///
 /// 页面那边（[_VideoPageHeroTargetState]）把矩形从「卡片矩形」插值到「整个视口」；
-/// 这一层走的是同一条路 —— 同样的两个端点、同一条 [_containerCurve]、同一个进度。
+/// 这一层走的是同一条路 —— 同样的两个端点、同一条主曲线（去 [_openCurve] /
+/// 回 [_closeCurve]）、同一个进度。
 /// 两边因此永远重合：卡片不会钉在原地等页面长大，也不会比页面快一步或慢半拍。
 ///
 /// 两个端点是**量**出来的（源卡片矩形、详情页矩形），进度直接取详情页那条路由的
@@ -741,7 +787,8 @@ class _FlightCardLayer extends StatefulWidget {
   final Animation<double> animation;
   final BuildContext flightContext;
 
-  /// true = 回程，几何走页面那条 `returning` 分支的曲线。
+  /// true = 回程：几何走 [_closeCurve]、淡出窗口走 [_cardLayerCloseFadeCurve]。
+  /// false = 去程，两者分别走 [_openCurve] / [_cardLayerOpenFadeCurve]。
   final bool returning;
 
   /// 源卡片在屏幕上的矩形（起点）。
@@ -796,27 +843,31 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
       builder: (context, child) {
         // 进度 = 详情页路由动画的值：去程 0 → 1，回程 1 → 0。
         final progress = widget.animation.value;
-        // 卡片的不透明度跟进度走，去程回程共用一行 —— 同一条曲线在两边都自动是
-        // "从有到无"的方向。
-        final cardAlpha = 1 - _cardLayerFadeCurve.transform(progress);
+        // 卡片的不透明度跟进度走。打开 / 关闭各有一套窗口（见上方常量区），选哪套
+        // 只看方向；两套都用同一行算、在两个方向上都自动是"从有到无"的方向。
+        final fadeCurve = widget.returning
+            ? _cardLayerCloseFadeCurve
+            : _cardLayerOpenFadeCurve;
+        final cardAlpha = 1 - fadeCurve.transform(progress);
         if (!_measured || cardAlpha <= 0.002) {
           return const SizedBox.shrink();
         }
         // 矩形：和 [_VideoPageHeroTargetState] 里那条 `pageRect` 是同一套算法 ——
         // 同一组端点、同一条曲线、同一个进度。页面长到哪，卡片就长到哪。
         //
-        // 去程（含"中途被打断、倒着放回去"那种）用主曲线往前插值；
-        // 回程用页面 returning 分支那条 easeInOutCubic 收回去。
+        // 去程（含"中途被打断、倒着放回去"那种）用 [_openCurve] 往前插值；
+        // 回程用 [_closeCurve] 收回去。这两条曲线在页面构建体和 `_VideoCardRectTween`
+        // 里各有一处一模一样的使用，改曲线时三处要一起改。
         final rect = widget.returning
             ? Rect.lerp(
                 widget.viewportRect,
                 widget.cardRect,
-                Curves.easeInOutCubic.transform(1 - progress),
+                _closeCurve.transform(1 - progress),
               )!
             : Rect.lerp(
                 widget.cardRect,
                 widget.viewportRect,
-                _containerCurve.transform(progress),
+                _openCurve.transform(progress),
               )!;
         final box = widget.flightContext.findRenderObject();
         final flightOrigin = box is RenderBox && box.hasSize
