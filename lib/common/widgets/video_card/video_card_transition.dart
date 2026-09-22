@@ -14,49 +14,49 @@ const double _cardRadius = 12;
 /// 且随展开进度线性加深 —— 起点 0、到位时到满值。
 const double _scrimOpacity = 0.35;
 
-/// 转场期间叠在详情页**之上**的那层「卡片」什么时候淡掉。
-///
-/// 这一层画的就是卡片本身，两样东西叠在一起：
-///
-///   ① **卡片底色**（[_CardSurface.substrateColor]，也就是卡片在列表里背后透出来
-///      的那个颜色）铺满整个矩形；
-///   ② 卡片内容（封面 + 标题）按宽度等比放大，锚在矩形左上角。
-///
-/// 矩形不是钉在原地的：它和详情页用**同一条曲线、同一个进度**从「卡片矩形」
-/// 长到「整个视口」，所以卡片是跟着页面一起长大、一起往左上角飘的 ——
-/// 起飞那一帧看到的就是原卡片（这时矩形正好等于卡片矩形），随后两者一起长。
-///
-/// 为什么必须垫底色：卡片内容自己往往没有背景（`VideoCardH` 就是一层
-/// `Material(type: transparency)`），在列表里靠页面底色透上来才像"一张卡片"。
-/// 放大之后矩形比卡片内容高出一大截，多出来的那块要是没有底色，露出的就是
-/// 底下的详情页 —— 读起来像"卡片被撕开了一条"。垫上底色之后，多出来的部分
-/// 自然成了卡片的背景，接缝读不出来。
-///
-/// 竖卡和横卡都走这一套。横卡尤其需要：它的矩形是横向的（宽 > 高），
-/// 而详情页是 9:20 竖屏，用 `BoxFit.cover` 把整页塞进横向矩形时缩放比由宽度
-/// 决定、页面被放大到远超矩形高度，起飞那一帧会变成"详情页顶部被放大的一小块"
-/// —— 有这层卡片挡着，那段跳变就读不出来了。
-///
-/// 时间安排：[_cardLayerHoldUntil] 之前完全不透明（把最乱的开场全遮住），
-/// 之后按 [_cardLayerFadeCurve] 渐隐，到 [_cardLayerFadeEnd] 已完全透明。
+// ── 详情页之上那两层什么时候淡掉：三层接力，各管一段 ──
+//
+//   ① 卡片本体（封面 + 标题 + 底色）   0.22 ~ 0.66   ← [_cardLayerFadeCurve]
+//   ② 纯色衬底（卡片**之下**那一层）   0.38 ~ 0.86   ← [_substrateFadeCurve]
+//   ③ 详情页自己（一直在长大，不淡）
+//
+// 两者都用 `animation.value`（时间轴进度）驱动，去程回程共用一套 —— 回程 value
+// 递减，两层自动重新浮现、收回卡片时正好各就各位，不需要判断方向。
+//
+// 为什么衬底要比卡片活得久：卡片淡出时，底下如果直接是详情页，就会看到
+// "详情页顶部被放大的一小块"从卡片里渗出来（横卡最明显，它的矩形是横向的、
+// `BoxFit.cover` 让缩放比由宽度决定，露出的那块和卡片原貌差得最远）。中间垫一层
+// 纯色，过渡就变成 卡片 → 纯色 → 详情页，两段各自都是同色或同画面的交叉淡出，
+// 读不出跳变。衬底一直铺到页面快长满（0.86 时页面已铺到约 0.90）才退场。
+//
+// 垫在哪一层：衬底在卡片**之下**（先画衬底、再画卡片），所以开场那一段它完全被
+// 卡片盖住、一个像素都看不见；卡片开始淡，它才接着顶上来。竖卡横卡一视同仁。
 const double _cardLayerHoldUntil = 0.22;
-/// 到这里卡片层已经全透明。
-///
-/// 注意和 [_containerCurve] 的联动：当前主曲线 70% 时页面只铺到 0.69（不是铺满），
-/// 所以这一刻卡片消失后、页面还会继续长大最后 31%。觉得"露得偏早、还能看见边缘
-/// 在扩"，把它提到 0.8（那时铺到 0.84）即可。
-const double _cardLayerFadeEnd = 0.7;
+const double _cardLayerFadeEnd = 0.66;
 const Curve _cardLayerFadeCurve = Interval(
   _cardLayerHoldUntil,
   _cardLayerFadeEnd,
   curve: Curves.easeOutCubic,
 );
 
+/// 衬底（卡片下面那层纯色）什么时候淡尽。
+///
+/// 起点 [_substrateHoldUntil]=0.38 落在卡片淡出中段，两条曲线错开，不会出现
+/// "卡片和衬底同时消失、页面一把露出来"的空档。`easeIn` 让前半段遮得久一些。
+const double _substrateHoldUntil = 0.38;
+const double _substrateFadeEnd = 0.86;
+const Curve _substrateFadeCurve = Interval(
+  _substrateHoldUntil,
+  _substrateFadeEnd,
+  curve: Curves.easeIn,
+);
+
 // ─────────────────────────── 曲线调参区 ───────────────────────────
-// 整个转场一共四条曲线，按「谁在动」分清楚，改的时候别串味：
+// 整个转场一共五条曲线，按「谁在动」分清楚，改的时候别串味：
 //
 //   _containerCurve        页面矩形从卡片矩形长到全屏 —— **主曲线**，影响最大
-//   _cardLayerFadeCurve    上层卡片（封面 + 标题）的淡出（0.22 ~ 0.70）
+//   _cardLayerFadeCurve    上层卡片（封面 + 标题 + 底色）的淡出（0.22 ~ 0.66）
+//   _substrateFadeCurve    纯色衬底（卡片之下）的淡出（0.38 ~ 0.86）
 //   Curves.easeInOutCubic  返回方向的收拢（见 returning 分支与 _VideoCardRectTween）
 //   Curves.linear          Hero 自身的插值（不参与视觉，只为拿进度）
 //
@@ -82,10 +82,26 @@ const Curve _cardLayerFadeCurve = Interval(
 const Curve _containerCurve = Cubic(0.54, 0.15, 0.68, 0.88);
 
 // The player decoder is heavier than ordinary page UI. Start it only after
-// that UI is visible, but while the card is still completing its expansion.
-const double _entryContentReadyAt = 0.62;
+// that UI is visible, and keep it clear of the busiest stretch of the flight
+// (the page is still changing scale and the card layer is still compositing).
+// Starting it mid-animation makes decoder warm-up steal frames from the
+// animation, which reads as stutter.
+const double _entryContentReadyAt = 0.85;
 const Duration videoPageTransitionDuration = Duration(milliseconds: 400);
 const Duration videoPageReverseTransitionDuration = Duration(milliseconds: 320);
+
+/// 页面内容要不要跟着矩形一起放大。
+///
+/// `true`（当前）= 详情页用 `BoxFit.cover` 缩进矩形，文字图片跟着一起长大，
+/// 读起来是"卡片长成了详情页"。
+///
+/// 代价是整页每一帧都在换缩放比 —— 转场里最贵的一项，低端机上光栅缓存会因此
+/// 频繁失效、反复把整页光栅化。实机嫌卡就改成 `false`：页面按 1:1 绘制、矩形
+/// 只当窗口把页面揭开，内容不再放大，GPU 立刻轻下来（观感从"卡片长大"变成
+/// "窗口揭开"）。两处缩放的采样质量也一并降到 [FilterQuality.low]：放大场景下
+/// 双线性本身就比 mipmap 更锐，还免掉每帧生成 mipmap 链的开销。
+const bool _scalePageContent = true;
+
 /// 一次转场所需要的全部信息：源卡片本体（量起点矩形）和那个 context。
 ///
 /// 注意这里**不存卡片 widget、也不存截图**：上层那层卡片是从 Hero 的
@@ -128,23 +144,27 @@ Color transitionBackgroundOf(BuildContext context) {
 
 // ────────────────────────── 这一版转场长什么样 ──────────────────────────
 //
-// 两层同时动，各管一半：
+// 三层叠在一起，共用一个矩形、一条曲线、一个进度：
 //
 //   ① 详情页自己长大。`pageRect` 从「卡片矩形」插值到「整个视口」，页面内容用
 //      `BoxFit.cover` 缩放进这个矩形 —— 所以文字和图片是跟着一起放大的，读起来
 //      是"卡片长成了详情页"，而不是拿一个窗口去揭开一张本来就全尺寸的页面。
 //
 //   ② 卡片本体盖在页面**之上**（飞行层，见 [_buildFlightShuttle]），走的也是
-//      `pageRect` 那一条：同样的两个端点、同一条曲线、同一个进度 —— 卡片跟着
-//      页面一起放大、一起往左上角移，随进度淡出。它负责把"页面矩形刚越过卡片
-//      位置、里面显示的是详情页顶部被放大的一小块"这一段藏起来。竖卡横卡一视
-//      同仁 —— 横卡矩形是横向的，那一段跳变最明显，最需要这层。
+//      `pageRect` 那一条 —— 卡片跟着页面一起放大、一起往左上角移，随进度淡出。
+//      它负责把"页面矩形刚越过卡片位置、里面显示的是详情页顶部被放大的一小块"
+//      这一段藏起来。竖卡横卡一视同仁 —— 横卡矩形是横向的，那一段跳变最明显。
 //
-// 用卡片本体而不是一块纯色：颜色只能蒙住形状，蒙不住内容；横卡上"左封面 +
-// 标题"和"被放大的详情页顶部"差得远，只有把卡片原样盖着才读不出切换。卡片
-// 内容自己不带背景，所以底色由这一层补上（[_FlightCardLayer] 里的 `ColoredBox`），
-// 放大后多出来的那块就成了卡片的背景。顺带也就没有了浅色主题下满屏泛白那一类
-// 问题 —— 底色只铺在页面矩形之内，而矩形是从卡片那一格长出来的。
+//   ③ 卡片**之下**还有一层纯色衬底（同在飞行层），比卡片活得久一点：卡片淡出
+//      之后由它继续挡着页面，到页面快长满时才退场。于是整段的观感是
+//      卡片 → 纯色 → 详情页，两段都是同色或同画面的交叉淡出，读不出跳变。
+//
+// 为什么②用卡片本体而不是一块纯色：颜色只能蒙住形状，蒙不住内容；横卡上
+// "左封面 + 标题"和"被放大的详情页顶部"差得远，只有把卡片原样盖着才读不出切换。
+// 卡片内容自己不带背景，所以它的底色由飞行层补上（[_FlightCardLayer] 里的
+// `ColoredBox`），放大后多出来的那块就成了卡片的背景。③ 和它同色，所以卡片淡出
+// 时接的是一模一样的面。两层都只铺在页面矩形之内（矩形是从卡片那一格长出来的），
+// 不像铺满整屏那样在浅色主题下开场泛白。
 
 bool hasPendingVideoCardTransition(Object tag) =>
     _pendingVideoTransition?.tag == tag;
@@ -302,9 +322,13 @@ class VideoCardHero extends StatefulWidget {
 
   /// 卡片底色（卡片所在页面背后透出来的那个颜色）。
   ///
-  /// 转场期间用来把上层那张卡片的底铺满 —— 卡片内容自己往往不带背景
-  /// （`VideoCardH` 就是一层透明的 Material），在列表里靠页面底色透上来才像
-  /// "一张卡片"，放大之后多出来的那块也得继续是这个颜色。
+  /// 转场期间它被用来铺两层（见 [_FlightCardLayer]）：上层卡片自己的底色，
+  /// 以及卡片**之下**那层纯色衬底。
+  ///
+  /// 为什么需要这两层：卡片内容自己往往不带背景（`VideoCardH` 就是一层透明的
+  /// Material），在列表里靠页面底色透上来才像"一张卡片"；放大之后矩形比内容高出
+  /// 一大截，多出来的那块也得继续是这个颜色。衬底则是卡片淡出之后的接力者 ——
+  /// 页面还没长满时由它继续挡着，别让详情页从卡片那块矩形里渗出来。
   final Color surfaceColor;
   final Widget child;
   final bool preserveChildHeroes;
@@ -461,15 +485,28 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
       builder: (context, constraints) {
         final size = constraints.biggest;
         final viewport = Offset.zero & size;
+        // 页面内容按视口尺寸布局一份，转场期间不变。里面的 `RepaintBoundary`
+        // 让这份内容只光栅化一次，每帧剩下的只是外面的裁剪与变换。
+        //
+        // 这一段是转场里最贵的地方：详情页是整屏内容，一旦每帧重新光栅化，
+        // 中低端机立刻掉帧。所以 `RepaintBoundary` 和「内容尺寸恒定」这两件事
+        // 都不能少 —— 变化的只有包着它的那个矩形。
+        final pageContent = SizedBox.fromSize(
+          size: size,
+          child: RepaintBoundary(child: widget.child),
+        );
         return AnimatedBuilder(
           animation: animation,
-          child: widget.child,
+          // 内容这份子树在两级 builder 之间原样传递，转场期间一次都不会重建。
+          child: pageContent,
           builder: (context, child) {
             // Interactive updates can report "forward" even while their value
             // decreases. Keep the return composition until the gesture settles.
+            // (`_route` 在 didChangeDependencies 里存过一次，这里不再每帧
+            //  `ModalRoute.of` 去查继承树。)
             final reversing =
                 animation.status == AnimationStatus.reverse ||
-                (ModalRoute.of(context)?.popGestureInProgress ?? false);
+                (_route?.popGestureInProgress ?? false);
             // Flutter diverts an unfinished push by reversing its existing
             // Hero tween/shuttle. The page must retrace that same entry too,
             // not start a second contraction from an assumed full-screen page.
@@ -528,17 +565,29 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
                     borderRadius: const BorderRadius.all(
                       Radius.circular(_cardRadius),
                     ),
-                    child: FittedBox(
-                      // cover = 等比缩放到填满矩形，多出来的部分裁掉。
-                      // 用 fill 会把页面拉变形（卡片矩形接近方形、视口是 9:20），
-                      // 用 contain 则会在矩形里留出空白边。
-                      fit: BoxFit.cover,
-                      alignment: Alignment.topCenter,
-                      child: SizedBox.fromSize(
-                        size: size,
-                        child: RepaintBoundary(child: child),
-                      ),
-                    ),
+                    child: _scalePageContent
+                        ? FittedBox(
+                            // cover = 等比缩放到填满矩形，多出来的部分裁掉。
+                            // 用 fill 会把页面拉变形（卡片矩形接近方形、视口是
+                            // 9:20），用 contain 则会在矩形里留出空白边。
+                            fit: BoxFit.cover,
+                            alignment: Alignment.topCenter,
+                            // 放大方向上 mipmap（medium）只会更糊、还要每帧生成
+                            // mipmap 链；双线性（low）这里更快也更锐。
+                            filterQuality: FilterQuality.low,
+                            child: child,
+                          )
+                        : OverflowBox(
+                            // 性能档：页面按 1:1 绘制，矩形只当窗口把页面揭开，
+                            // 内容不放大。省掉每帧都在变的缩放比，
+                            // 低端机立刻轻下来（观感从"卡片长大"变成"窗口揭开"）。
+                            alignment: Alignment.topCenter,
+                            minWidth: 0,
+                            minHeight: 0,
+                            maxWidth: double.infinity,
+                            maxHeight: double.infinity,
+                            child: child,
+                          ),
                   ),
                 ),
                 // Hero 的锚点铺满视口。它的 child（[_VideoPageSurface]）什么都不
@@ -577,6 +626,11 @@ class _VideoPageSurface extends StatelessWidget {
   Widget build(BuildContext context) => const SizedBox.expand();
 }
 
+/// 列表里那张真卡片的壳：按卡片圆角裁一刀，并带上飞行层要用的那几样信息
+/// （底色、圆角、内容）。
+///
+/// 注意飞行层**不**复用它这个 `ClipRRect` —— 飞行层自己按同一圆角裁，只从它这里
+/// 取 `substrateColor` / `radius` / 内容，省掉一层重复的裁剪。
 class _CardSurface extends StatelessWidget {
   const _CardSurface({
     required this.child,
@@ -590,7 +644,8 @@ class _CardSurface extends StatelessWidget {
   final Widget? flightChild;
   final double radius;
 
-  /// 卡片底色。飞行层拿它把放大后的卡片垫满（见 [_FlightCardLayer]）。
+  /// 卡片底色。飞行层拿它铺两层：卡片自己的底、以及卡片**下面**那层纯色衬底
+  /// （见 [_FlightCardLayer]）。两者同色，所以卡片淡出时接的是一模一样的面。
   final Color substrateColor;
 
   /// 封面在卡片里的矩形读取器。**当前转场不使用**，保留是因为卡片端还在传
@@ -604,7 +659,7 @@ class _CardSurface extends StatelessWidget {
   );
 }
 
-/// 飞行层 = **卡片本体 + 卡片底色**，跟着详情页一起放大、一起移动。
+/// 飞行层 = **纯色衬底 + 卡片本体**，两层都跟着详情页一起放大、一起移动。
 ///
 /// 页面那边（[_VideoPageHeroTargetState]）把矩形从「卡片矩形」插值到「整个视口」；
 /// 这一层走的是同一条路 —— 同样的两个端点、同一条 [_containerCurve]、同一个进度。
@@ -655,25 +710,36 @@ Widget _buildFlightShuttle(
       cardContext,
       Material(
         type: MaterialType.transparency,
-        child: cardSurface.flightChild ?? cardSurface,
+        // 直接取卡片内容，不再套 `_CardSurface` —— 那里面还有一层 `ClipRRect`，
+        // 而飞行层自己已经按同一圆角裁过了（见 [_FlightCardLayer]），套两层
+        // 只是白白多一个裁剪层。
+        child: cardSurface.flightChild ?? cardSurface.child,
       ),
     ),
   );
 }
 
-/// 跟着页面一起长大的那层卡片。
+/// 跟着页面一起长大的那两层 —— **纯色衬底在下，卡片本体在上**。
 ///
-/// 里面画两样：
+/// 从下到上：
 ///
-///   · **底色**铺满整个矩形（`ColoredBox`）—— 卡片内容放大后矩形比它高出一大截，
-///     多出来的那块必须是卡片自己的背景色，否则露出的就是详情页，穿帮；
-///   · **卡片内容**按宽度等比放大（`rect.width / 卡片宽`）、锚在左上角 ——
-///     它的左右边缘因此始终贴着矩形的左右边缘（也就是详情页的左右边缘），
-///     整段动画读起来就是"这张卡片被拉大成详情页"。
+///   ⓪ **衬底**（`ColoredBox` 带 alpha）：和卡片完全同矩形，开场被卡片盖住、
+///      一个像素都看不见；卡片淡出后由它继续挡住详情页，直到
+///      [_substrateFadeCurve] 走完才退场。它是"卡片 → 详情页"之间的缓冲。
+///   ① **卡片底色**铺满整个矩形 —— 卡片内容放大后矩形比它高出一大截，
+///      多出来的那块必须是卡片自己的背景色，否则露出的就是详情页，穿帮；
+///   ② **卡片内容**按宽度等比放大（`rect.width / 卡片宽`）、锚在左上角 ——
+///      它的左右边缘因此始终贴着矩形的左右边缘（也就是详情页的左右边缘），
+///      整段动画读起来就是"这张卡片被拉大成详情页"。
 ///
 /// 卡片内容先按**原尺寸**（`cardRect.size`）布局、再整体缩放，而不是直接把放大后的
 /// 尺寸喂给它：卡片排版是跟着宽度走的，直接塞一个大宽度进去，封面比例、标题换行
-/// 都会变，那就不是"同一张卡片放大"了。
+/// 都会变，那就不是"同一张卡片放大"了。外面包了一层 `RepaintBoundary`，这份原尺寸
+/// 内容就只光栅化一次，之后每帧只剩变换在动。
+///
+/// 性能上刻意避开两处开销：衬底用 `ColoredBox` 自带 alpha 而不是 `Opacity`
+/// （纯色块不需要 saveLayer）；内容缩放用 [FilterQuality.low]（放大场景下比
+/// mipmap 又快又锐）。
 class _FlightCardLayer extends StatefulWidget {
   const _FlightCardLayer({
     required this.animation,
@@ -711,6 +777,12 @@ class _FlightCardLayer extends StatefulWidget {
 }
 
 class _FlightCardLayerState extends State<_FlightCardLayer> {
+  /// 圆角只跟 `widget.radius` 有关，算一次就够 —— 每帧新建 `BorderRadius`
+  /// 会让 `ClipRRect` 每帧走一遍 `updateRenderObject` 比较。
+  late final BorderRadius _radius = BorderRadius.all(
+    Radius.circular(widget.radius),
+  );
+
   /// 第一帧先不画。
   ///
   /// 飞行层的盒子要等父级 Stack 走完一次 layout，`localToGlobal` 才读得到它被
@@ -738,12 +810,19 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
       builder: (context, child) {
         // 进度 = 详情页路由动画的值：去程 0 → 1，回程 1 → 0。
         final progress = widget.animation.value;
-        // 不透明度跟进度走，去程回程共用一行 —— 同一条曲线在两边都自动是
-        // "从有到无"的方向。
-        final alpha = 1 - _cardLayerFadeCurve.transform(progress);
-        if (!_measured || alpha <= 0.002) return const SizedBox.shrink();
+        // 两层各自的不透明度，都跟进度走。去程回程共用这几行 —— 同一条曲线在
+        // 两个方向上都自动是"从有到无"的方向。
+        //
+        // 单独算 `substrateAlpha` 是为了在卡片已经淡尽之后**继续保留衬底**：
+        // 那一帧不能整个 `SizedBox.shrink()` 退出，否则页面会提前一步露出来。
+        final cardAlpha = 1 - _cardLayerFadeCurve.transform(progress);
+        final substrateAlpha = 1 - _substrateFadeCurve.transform(progress);
+        if (!_measured) return const SizedBox.shrink();
+        if (cardAlpha <= 0.002 && substrateAlpha <= 0.002) {
+          return const SizedBox.shrink();
+        }
         // 矩形：和 [_VideoPageHeroTargetState] 里那条 `pageRect` 是同一套算法 ——
-        // 同一组端点、同一条曲线、同一个进度。页面长到哪，卡片就长到哪。
+        // 同一组端点、同一条曲线、同一个进度。页面长到哪，卡片和衬底就长到哪。
         //
         // 去程（含"中途被打断、倒着放回去"那种）用主曲线往前插值；
         // 回程用页面 returning 分支那条 easeInOutCubic 收回去。
@@ -762,46 +841,79 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
         final flightOrigin = box is RenderBox && box.hasSize
             ? box.localToGlobal(Offset.zero)
             : Offset.zero;
+        final localRect = rect.shift(-flightOrigin);
         // 卡片内容放大到与矩形同宽 —— 系数就是宽度比，所以左右边缘永远贴着矩形。
         final scale = rect.width / widget.cardRect.width;
         return Stack(
           fit: StackFit.expand,
           clipBehavior: Clip.none,
           children: [
-            Positioned.fromRect(
-              key: const ValueKey('video-transition-card-layer'),
-              rect: rect.shift(-flightOrigin),
-              child: Opacity(
-                opacity: alpha,
+            // ⓪ 纯色衬底：卡片**之下**那一层。
+            //
+            //    开场那一段它和卡片同矩形、被卡片完全盖住，一个像素都看不见 ——
+            //    所以那时干脆不画（`cardAlpha` 还是 1 的时候，整块就是一次多余
+            //    的全屏填充）。卡片一淡，它接着顶上来把详情页继续挡住，直到页面
+            //    快长满才退场。这样画面上不会出现"卡片的内容没了、底下的详情页
+            //    已经渗出来"这种空档。
+            //
+            //    用 `ColoredBox` 直接给颜色带 alpha，不放 `Opacity`：纯色块走
+            //    `Opacity` 会多一次整矩形 saveLayer，而这里改颜色就够了。
+            if (cardAlpha < 0.998 && substrateAlpha > 0.002)
+              Positioned.fromRect(
+                key: const ValueKey('video-transition-flight-substrate'),
+                rect: localRect,
                 child: ClipRRect(
-                  borderRadius: BorderRadius.all(
-                    Radius.circular(widget.radius),
-                  ),
+                  borderRadius: _radius,
                   child: ColoredBox(
-                    // 卡片底色铺满整个矩形：卡片内容自己不带背景，靠这一层才
-                    // 重新变回"一张卡片"，多出来的那块也成了它的背景。
-                    color: widget.substrateColor,
-                    child: OverflowBox(
-                      // `Positioned.fromRect` 给的是紧约束，直接把固定尺寸的卡片
-                      // 塞进去会被压成矩形大小；先解约束再缩放。
-                      alignment: Alignment.topLeft,
-                      minWidth: 0,
-                      minHeight: 0,
-                      maxWidth: double.infinity,
-                      maxHeight: double.infinity,
-                      child: Transform.scale(
-                        scale: scale,
+                    color: widget.substrateColor.withValues(
+                      alpha: substrateAlpha,
+                    ),
+                  ),
+                ),
+              ),
+            // ① 卡片本体：底色铺满整个矩形 + 内容按宽度等比放大。
+            if (cardAlpha > 0.002)
+              Positioned.fromRect(
+                key: const ValueKey('video-transition-card-layer'),
+                rect: localRect,
+                child: Opacity(
+                  opacity: cardAlpha,
+                  child: ClipRRect(
+                    borderRadius: _radius,
+                    child: ColoredBox(
+                      // 卡片底色铺满整个矩形：卡片内容自己不带背景，靠这一层才
+                      // 重新变回"一张卡片"，多出来的那块也成了它的背景。
+                      color: widget.substrateColor,
+                      child: OverflowBox(
+                        // `Positioned.fromRect` 给的是紧约束，直接把固定尺寸的卡片
+                        // 塞进去会被压成矩形大小；先解约束再缩放。
                         alignment: Alignment.topLeft,
-                        child: SizedBox.fromSize(
-                          size: widget.cardRect.size,
-                          child: child,
+                        minWidth: 0,
+                        minHeight: 0,
+                        maxWidth: double.infinity,
+                        maxHeight: double.infinity,
+                        child: Transform.scale(
+                          scale: scale,
+                          alignment: Alignment.topLeft,
+                          // 卡片被放大数倍，mipmap（medium）在放大方向上只会更糊、
+                          // 还多一道每帧生成 mipmap 链的开销；双线性（low）这里
+                          // 既更快也更锐。
+                          filterQuality: FilterQuality.low,
+                          child: RepaintBoundary(
+                            // 卡片内容（封面图 + 标题）只按原尺寸光栅化一次，
+                            // 之后每帧只更新外面的变换 —— 这一条是转场流畅度的
+                            // 关键：没有它，每帧都要把放大后的卡片重新光栅化。
+                            child: SizedBox.fromSize(
+                              size: widget.cardRect.size,
+                              child: child,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
         );
       },
