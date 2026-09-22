@@ -589,8 +589,9 @@ _NavShape? _bottomNavShape(BuildContext context) {
     if (element.widget is! MainLayout) return true;
     final renderObject = element.renderObject;
     if (renderObject is SlottedContainerRenderObjectMixin<MainType, RenderBox>) {
-      if (renderObject is RenderBox && renderObject.hasSize) {
-        layoutWidth = renderObject.size.width;
+      final RenderObject? layoutBox = renderObject;
+      if (layoutBox is RenderBox && layoutBox.hasSize) {
+        layoutWidth = layoutBox.size.width;
       }
       final nav = renderObject.childForSlot(MainType.bottomNav);
       if (nav != null && nav.attached && nav.hasSize) {
@@ -603,7 +604,8 @@ _NavShape? _bottomNavShape(BuildContext context) {
   if (box == null) return null;
 
   var rect = box.localToGlobal(Offset.zero) & box.size;
-  final floating = layoutWidth != null && rect.width < layoutWidth - 0.5;
+  final width = layoutWidth;
+  final floating = width != null && rect.width < width - 0.5;
   if (floating) {
     rect = _visualBarRect(box, rect);
   }
