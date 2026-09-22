@@ -16,26 +16,42 @@ const double _scrimOpacity = 0.35;
 
 // ── 详情页之上那层卡片什么时候淡掉 ──
 //
-// 打开 / 关闭各一套窗口 —— 因为两个方向配的是两条不同的曲线（见下方「曲线调参区」）：
+// 打开方向**按卡片形状分两套**，关闭方向共用一套 —— 因为竖卡和横卡在同一进度
+// 上的观感差得很远（见下方"横卡为什么必须早退"）：
 //
-//   打开：0.10 ~ 0.46   ← [_cardLayerOpenFadeCurve]   （[_openCurve] 前 40% 就跑完几何）
-//   关闭：0.22 ~ 0.66   ← [_cardLayerCloseFadeCurve]  （[_closeCurve] 前段慢、中段猛）
+//   打开 · 横卡 / 横屏：0.10 ~ 0.46   ← [_cardLayerOpenFadeCurve]
+//   打开 · 竖卡：      0.16 ~ 0.64   ← [_cardLayerPortraitOpenFadeCurve]
+//   关闭 · 两者共用：  0.22 ~ 0.66   ← [_cardLayerCloseFadeCurve]
 //
 // 两个方向都用 `animation.value`（时间轴进度）驱动：去程 0 → 1、回程 1 → 0，同一条
 // 曲线在两个方向上都自动是"从有到无"，不需要判断方向。
 //
-// 打开方向为什么要提前这么多：打开曲线是"一上来就全力"，0.22 时页面已经铺到 0.76，
-// 卡片要是还满不透明地停在那儿，就成了"一张被放大好几倍、还糊着的卡片"霸屏 —— 等到
-// 0.46 才淡尽，页面那时已铺到 0.94。提前到 0.10 起淡还有个好处：淡出有
-// 0.36 × 350ms ≈ 126ms，足够读成一次"溶解"而不是硬切。
+// 横卡为什么必须早退：打开曲线是"一上来就全力"，0.22 时页面已经铺到 0.76，横卡要
+// 是还满不透明地停在那儿，就成了"一张被放大好几倍、还糊着的横卡霸屏"。0.10 起淡、
+// 0.46 淡尽（页面那时已铺到 0.94），淡出本身有 0.36 × 350ms ≈ 126ms，读成一次
+// "溶解"而不是硬切 —— 横卡跟页面形状差得远（1.79:1 对 0.45:1），只有尽早溶掉，
+// "卡片"到"页面"之间才不会被看出切换。
 //
-// 卡片淡尽时页面已经铺到 0.94 以上，所以没有"裸着长"的空档 —— 早先那层纯色衬底
-// 本来是用来遮这一段的，现在这条曲线自己就把空档填掉了。
+// 竖卡为什么能多留一会儿（0.16 ~ 0.64）：竖卡矩形本来就接近页面比例（0.95:1），
+// 放大后内容仍然铺得满，"卡片长成页面"这条路它是最连贯的。原来跟横卡共用
+// 0.10 ~ 0.46，结果是页面刚铺到 40% 卡片就没了 —— 读起来成了"卡片一闪就没、
+// 页面接着长"，那一下断裂就是竖屏下那股"卡顿感"。往后挪到页面 62% → 98.5% 这段
+// 淡出，消失和铺满就接上了（多出来的 0.18 × 350ms ≈ 63ms 停留，卡片是跟着页面
+// 一起放大的，不额外花钱）。
 const double _cardLayerOpenHoldUntil = 0.10;
 const double _cardLayerOpenFadeEnd = 0.46;
 const Curve _cardLayerOpenFadeCurve = Interval(
   _cardLayerOpenHoldUntil,
   _cardLayerOpenFadeEnd,
+  curve: Curves.easeOutCubic,
+);
+
+/// 竖卡（打开方向）那一套：比横卡晚 0.06 起淡、晚 0.18 收。
+const double _cardLayerPortraitOpenHoldUntil = 0.16;
+const double _cardLayerPortraitOpenFadeEnd = 0.64;
+const Curve _cardLayerPortraitOpenFadeCurve = Interval(
+  _cardLayerPortraitOpenHoldUntil,
+  _cardLayerPortraitOpenFadeEnd,
   curve: Curves.easeOutCubic,
 );
 
@@ -45,6 +61,41 @@ const Curve _cardLayerCloseFadeCurve = Interval(
   _cardLayerCloseHoldUntil,
   _cardLayerCloseFadeEnd,
   curve: Curves.easeOutCubic,
+);
+
+/// 横卡 / 横屏的判据（宽高比）。1.35 卡在竖卡（≈0.95）和横卡（≈1.79）之间，
+/// 中间没有别的东西，取哪边都行。
+const double _horizontalAspect = 1.35;
+
+// ── 卡片下面那层"兜底"的页面底色（垫层）──
+//
+// 卡片淡出时，卡片原来占着的那块地方会露出底下的详情页。竖卡没问题：它放大后
+// 内容+底色能把页面顶部（黑播放器）整块盖住；**横卡盖不住** —— 它是横向的，
+// 按宽度放大后高度只够到视口的四分之一，剩下的地方直接就是播放器的黑。浅色主题
+// 下，卡片一淡就在眼前炸开一大块黑，很硬。
+//
+// 所以在卡片**下面**再垫一层卡片底色（也就是卡片原来背靠的那个浅色背景），它比
+// 卡片退得慢：观感从"卡片 → 黑"变成"卡片 → 浅色 → 慢慢变黑"。因为是同一块矩形
+// 里、同一种颜色在接管，读起来不像多了一层，只像卡片溶解得慢了一点。
+//
+// 垫层和卡片共用同一个矩形（就是展开中的页面），**不外扩到整屏** —— 铺满整屏
+// 的话，浅色主题下开场那一下会把首页一起盖白（页面还没长到那儿）。
+//
+// 竖卡也一并垫上：一方面它自己淡出后同样会露出播放器那条黑边，另一方面垫层把
+// "卡片消失"这件事拉长成一整段渐变，正好补上竖卡那股断裂感。两边用同一个机制，
+// 效果也就一致了。
+//
+// 曲线：0 ~ 0.70 淡出（easeInOut），比卡片（最长 0.64 淡尽）晚收 0.06 ——
+// 卡片彻底没了之后垫层还剩一点点，等它散尽时页面已经铺满，接的就是详情页自己的
+// 黑播放器，没有空档。
+//
+// **只在打开方向垫**（`returning` 那支不算）：关闭时页面本来就是从全屏收回来的，
+// 起点就是它自己，不存在"突然露出一块黑"这回事。
+const double _veilFadeEnd = 0.70;
+const Curve _veilFadeCurve = Interval(
+  0,
+  _veilFadeEnd,
+  curve: Curves.easeInOut,
 );
 
 // ─────────────────────────── 曲线调参区 ───────────────────────────
@@ -191,13 +242,20 @@ Color transitionBackgroundOf(BuildContext context) {
 //      `pageRect` 那一条 —— 卡片跟着页面一起放大、一起往左上角移，随进度淡出。
 //      它负责把"页面矩形刚越过卡片位置、里面显示的是详情页顶部被放大的一小块"
 //      这一段藏起来。竖卡横卡一视同仁 —— 横卡矩形是横向的，那一段跳变最明显。
-//      淡出窗口去程回程不同（打开 0.10~0.46、关闭 0.22~0.66，见上方常量区）。
+//      淡出窗口分三档（打开 · 横卡 0.10~0.46、打开 · 竖卡 0.16~0.64、关闭
+//      0.22~0.66，见上方常量区）。
 //
 // 为什么用卡片本体而不是一块纯色：颜色只能蒙住形状，蒙不住内容；横卡上
 // "左封面 + 标题"和"被放大的详情页顶部"差得远，只有把卡片原样盖着才读不出切换。
 // 卡片内容自己不带背景，所以它的底色由飞行层补上（[_FlightCardLayer] 里的
 // `ColoredBox`），放大后多出来的那块就成了卡片的背景。底色只铺在页面矩形之内
 // （矩形是从卡片那一格长出来的），不像铺满整屏那样在浅色主题下开场泛白。
+//
+//   ③ 卡片**之下**还垫着一层同样的底色（[_FlightCardLayer] 里那层 `veil`），
+//      比卡片晚 0.06 淡尽。卡片淡掉之后由它接着兜住那一块，所以卡片下面露出的
+//      不是"播放器的黑"，而是一段浅色 —— 浅色再随进度慢慢退成黑。横卡按宽度
+//      放大、高度只够到视口四分之一，盖不住底下的播放器，这一层就是为它准备的；
+//      竖卡虽然有底色能盖住，也一并垫上，让"消失"这件事本身变成一段渐变。
 
 bool hasPendingVideoCardTransition(Object tag) =>
     _pendingVideoTransition?.tag == tag;
@@ -843,13 +901,29 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
       builder: (context, child) {
         // 进度 = 详情页路由动画的值：去程 0 → 1，回程 1 → 0。
         final progress = widget.animation.value;
-        // 卡片的不透明度跟进度走。打开 / 关闭各有一套窗口（见上方常量区），选哪套
-        // 只看方向；两套都用同一行算、在两个方向上都自动是"从有到无"的方向。
+        // 横卡 / 横屏：卡片跟展开中的页面形状差得远（横向 vs 竖长），淡出要早，
+        // 而且它放大后盖不住底下那块页面，得靠垫层接住。
+        // 判据同时覆盖两种情况 —— 横卡在竖屏下点开（卡片矩形 1.79:1），以及
+        // 横屏下点开任何卡片（视口自己就比高宽）。
+        final horizontal =
+            widget.cardRect.width >= widget.cardRect.height * _horizontalAspect ||
+            widget.viewportRect.width > widget.viewportRect.height;
+        // 卡片的不透明度跟进度走。打开方向竖卡横卡各有一套窗口（见上方常量区），
+        // 关闭方向共用一套；三条都用同一行算，在两个方向上都自动是"从有到无"。
         final fadeCurve = widget.returning
             ? _cardLayerCloseFadeCurve
-            : _cardLayerOpenFadeCurve;
+            : (horizontal
+                  ? _cardLayerOpenFadeCurve
+                  : _cardLayerPortraitOpenFadeCurve);
         final cardAlpha = 1 - fadeCurve.transform(progress);
-        if (!_measured || cardAlpha <= 0.002) {
+        // 垫层比卡片退得慢：progress 0 时满、[_veilFadeEnd] 处散尽。
+        //
+        // 只在打开方向垫：关闭时页面本来就是从全屏收回来的，起点就是它自己，
+        // 不存在"突然露出一块黑"这回事，垫上去反而让收回的过程发闷。
+        final veilAlpha = widget.returning
+            ? 0.0
+            : 1 - _veilFadeCurve.transform(progress);
+        if (!_measured || (cardAlpha <= 0.002 && veilAlpha <= 0.002)) {
           return const SizedBox.shrink();
         }
         // 矩形：和 [_VideoPageHeroTargetState] 里那条 `pageRect` 是同一套算法 ——
@@ -880,45 +954,67 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
           fit: StackFit.expand,
           clipBehavior: Clip.none,
           children: [
-            // 卡片本体：底色铺满整个矩形 + 内容按宽度等比放大。
-            // （`cardAlpha` 已经在上面的提前返回里保证 > 0.002，这一层一定画。）
-            Positioned.fromRect(
-              key: const ValueKey('video-transition-card-layer'),
-              rect: localRect,
-              child: Opacity(
-                opacity: cardAlpha,
+            // 垫层：卡片之下那层底色，比卡片晚退场（见上方常量区）。卡片淡掉
+            // 之后先由它接住那一块 —— 读起来是"卡片 → 浅色 → 慢慢变黑"，而不是
+            // "卡片 → 播放器的黑"。横卡按宽度放大后高度只够到视口四分之一，
+            // 底下那一大块本来就盖不住，这一层主要是为它准备的。
+            //
+            // 和卡片共用同一块矩形、同一个圆角：不外扩到矩形之外（那儿还是首页，
+            // 铺出去浅色主题下会整屏泛白），四角也不会多出直角来。
+            if (veilAlpha > 0.002)
+              Positioned.fromRect(
+                key: const ValueKey('video-transition-card-veil'),
+                rect: localRect,
                 child: ClipRRect(
                   borderRadius: _radius,
-                  child: ColoredBox(
-                    // 卡片底色铺满整个矩形：卡片内容自己不带背景，靠这一层才
-                    // 重新变回"一张卡片"，多出来的那块也成了它的背景。
-                    color: widget.cardColor,
-                    child: OverflowBox(
-                      // `Positioned.fromRect` 给的是紧约束，直接把固定尺寸的卡片
-                      // 塞进去会被压成矩形大小；先解约束再缩放。
-                      alignment: Alignment.topLeft,
-                      minWidth: 0,
-                      minHeight: 0,
-                      maxWidth: double.infinity,
-                      maxHeight: double.infinity,
-                      child: Transform.scale(
-                        scale: scale,
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      color: widget.cardColor.withValues(alpha: veilAlpha),
+                    ),
+                  ),
+                ),
+              ),
+            if (cardAlpha > 0.002)
+              // 卡片本体：底色铺满整个矩形 + 内容按宽度等比放大。
+              // （`cardAlpha` 已经在上面的提前返回里保证 > 0.002，这一层一定画。）
+              Positioned.fromRect(
+                key: const ValueKey('video-transition-card-layer'),
+                rect: localRect,
+                child: Opacity(
+                  opacity: cardAlpha,
+                  child: ClipRRect(
+                    borderRadius: _radius,
+                    child: ColoredBox(
+                      // 卡片底色铺满整个矩形：卡片内容自己不带背景，靠这一层才
+                      // 重新变回"一张卡片"，多出来的那块也成了它的背景。
+                      color: widget.cardColor,
+                      child: OverflowBox(
+                        // `Positioned.fromRect` 给的是紧约束，直接把固定尺寸的卡片
+                        // 塞进去会被压成矩形大小；先解约束再缩放。
                         alignment: Alignment.topLeft,
-                        // 卡片被放大数倍，mipmap（medium）在放大方向上只会更糊、
-                        // 还多一道每帧生成 mipmap 链的开销；双线性（low）这里
-                        // 既更快也更锐。
-                        //
-                        // `Transform.scale` 有 `filterQuality` 这个参数，可以写；
-                        // 别顺手照抄到上面的 `FittedBox` 上 —— 那个没有（细节见
-                        // 页面那处的注释）。
-                        filterQuality: FilterQuality.low,
-                        child: RepaintBoundary(
-                          // 卡片内容（封面图 + 标题）只按原尺寸光栅化一次，
-                          // 之后每帧只更新外面的变换 —— 这一条是转场流畅度的
-                          // 关键：没有它，每帧都要把放大后的卡片重新光栅化。
-                          child: SizedBox.fromSize(
-                            size: widget.cardRect.size,
-                            child: child,
+                        minWidth: 0,
+                        minHeight: 0,
+                        maxWidth: double.infinity,
+                        maxHeight: double.infinity,
+                        child: Transform.scale(
+                          scale: scale,
+                          alignment: Alignment.topLeft,
+                          // 卡片被放大数倍，mipmap（medium）在放大方向上只会更糊、
+                          // 还多一道每帧生成 mipmap 链的开销；双线性（low）这里
+                          // 既更快也更锐。
+                          //
+                          // `Transform.scale` 有 `filterQuality` 这个参数，可以写；
+                          // 别顺手照抄到上面的 `FittedBox` 上 —— 那个没有（细节见
+                          // 页面那处的注释）。
+                          filterQuality: FilterQuality.low,
+                          child: RepaintBoundary(
+                            // 卡片内容（封面图 + 标题）只按原尺寸光栅化一次，
+                            // 之后每帧只更新外面的变换 —— 这一条是转场流畅度的
+                            // 关键：没有它，每帧都要把放大后的卡片重新光栅化。
+                            child: SizedBox.fromSize(
+                              size: widget.cardRect.size,
+                              child: child,
+                            ),
                           ),
                         ),
                       ),
@@ -926,7 +1022,6 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
                   ),
                 ),
               ),
-            ),
           ],
         );
       },
