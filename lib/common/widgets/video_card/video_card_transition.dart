@@ -1,43 +1,13 @@
 import 'dart:async' show Completer;
 
+import 'package:PiliPlus/common/widgets/main_layout.dart';
 import 'package:get/get.dart' show GetPageRoute;
 import 'package:material_ui/material_ui.dart';
 
-/// 卡片圆角。转场全程用它 —— 页面从卡片矩形长到全屏时圆角不变，
-/// 到位后这 12px 落在屏幕四角上几乎看不出来。
 const double _cardRadius = 12;
 
-/// 转场期间「页面之外」（也就是首页那一层）被压暗的强度。
-///
-/// 展开中的详情页是唯一的亮点，首页退到后面去，视线自然被拉到卡片上。
-/// 实测参考效果里这个压暗约 0.3 ~ 0.4（对首页亮度降幅约 30%），
-/// 且随展开进度线性加深 —— 起点 0、到位时到满值。
 const double _scrimOpacity = 0.35;
 
-// ── 详情页之上那层卡片什么时候淡掉 ──
-//
-// 打开方向**按卡片形状分两套**，关闭方向共用一套 —— 因为竖卡和横卡在同一进度
-// 上的观感差得很远（见下方"横卡为什么必须早退"）：
-//
-//   打开 · 横卡 / 横屏：0.10 ~ 0.46   ← [_cardLayerOpenFadeCurve]
-//   打开 · 竖卡：      0.16 ~ 0.64   ← [_cardLayerPortraitOpenFadeCurve]
-//   关闭 · 两者共用：  0.22 ~ 0.66   ← [_cardLayerCloseFadeCurve]
-//
-// 两个方向都用 `animation.value`（时间轴进度）驱动：去程 0 → 1、回程 1 → 0，同一条
-// 曲线在两个方向上都自动是"从有到无"，不需要判断方向。
-//
-// 横卡为什么必须早退：打开曲线是"一上来就全力"，0.22 时页面已经铺到 0.76，横卡要
-// 是还满不透明地停在那儿，就成了"一张被放大好几倍、还糊着的横卡霸屏"。0.10 起淡、
-// 0.46 淡尽（页面那时已铺到 0.94），淡出本身有 0.36 × 350ms ≈ 126ms，读成一次
-// "溶解"而不是硬切 —— 横卡跟页面形状差得远（1.79:1 对 0.45:1），只有尽早溶掉，
-// "卡片"到"页面"之间才不会被看出切换。
-//
-// 竖卡为什么能多留一会儿（0.16 ~ 0.64）：竖卡矩形本来就接近页面比例（0.95:1），
-// 放大后内容仍然铺得满，"卡片长成页面"这条路它是最连贯的。原来跟横卡共用
-// 0.10 ~ 0.46，结果是页面刚铺到 40% 卡片就没了 —— 读起来成了"卡片一闪就没、
-// 页面接着长"，那一下断裂就是竖屏下那股"卡顿感"。往后挪到页面 62% → 98.5% 这段
-// 淡出，消失和铺满就接上了（多出来的 0.18 × 350ms ≈ 63ms 停留，卡片是跟着页面
-// 一起放大的，不额外花钱）。
 const double _cardLayerOpenHoldUntil = 0.10;
 const double _cardLayerOpenFadeEnd = 0.46;
 const Curve _cardLayerOpenFadeCurve = Interval(
@@ -46,7 +16,6 @@ const Curve _cardLayerOpenFadeCurve = Interval(
   curve: Curves.easeOutCubic,
 );
 
-/// 竖卡（打开方向）那一套：比横卡晚 0.06 起淡、晚 0.18 收。
 const double _cardLayerPortraitOpenHoldUntil = 0.16;
 const double _cardLayerPortraitOpenFadeEnd = 0.64;
 const Curve _cardLayerPortraitOpenFadeCurve = Interval(
@@ -63,34 +32,12 @@ const Curve _cardLayerCloseFadeCurve = Interval(
   curve: Curves.easeOutCubic,
 );
 
-/// 横卡 / 横屏的判据（宽高比）。1.35 卡在竖卡（≈0.95）和横卡（≈1.79）之间，
-/// 中间没有别的东西，取哪边都行。
 const double _horizontalAspect = 1.35;
 
-// ── 卡片下面那层"兜底"的页面底色（垫层）──
-//
-// 卡片淡出时，卡片原来占着的那块地方会露出底下的详情页。竖卡没问题：它放大后
-// 内容+底色能把页面顶部（黑播放器）整块盖住；**横卡盖不住** —— 它是横向的，
-// 按宽度放大后高度只够到视口的四分之一，剩下的地方直接就是播放器的黑。浅色主题
-// 下，卡片一淡就在眼前炸开一大块黑，很硬。
-//
-// 所以在卡片**下面**再垫一层卡片底色（也就是卡片原来背靠的那个浅色背景），它比
-// 卡片退得慢：观感从"卡片 → 黑"变成"卡片 → 浅色 → 慢慢变黑"。因为是同一块矩形
-// 里、同一种颜色在接管，读起来不像多了一层，只像卡片溶解得慢了一点。
-//
-// 垫层和卡片共用同一个矩形（就是展开中的页面），**不外扩到整屏** —— 铺满整屏
-// 的话，浅色主题下开场那一下会把首页一起盖白（页面还没长到那儿）。
-//
-// 竖卡也一并垫上：一方面它自己淡出后同样会露出播放器那条黑边，另一方面垫层把
-// "卡片消失"这件事拉长成一整段渐变，正好补上竖卡那股断裂感。两边用同一个机制，
-// 效果也就一致了。
-//
-// 曲线：0 ~ 0.70 淡出（easeInOut），比卡片（最长 0.64 淡尽）晚收 0.06 ——
-// 卡片彻底没了之后垫层还剩一点点，等它散尽时页面已经铺满，接的就是详情页自己的
-// 黑播放器，没有空档。
-//
-// **只在打开方向垫**（`returning` 那支不算）：关闭时页面本来就是从全屏收回来的，
-// 起点就是它自己，不存在"突然露出一块黑"这回事。
+bool _isHorizontalFlight(Size card, Size viewport) =>
+    card.width >= card.height * _horizontalAspect ||
+    viewport.width > viewport.height;
+
 const double _veilFadeEnd = 0.70;
 const Curve _veilFadeCurve = Interval(
   0,
@@ -98,102 +45,26 @@ const Curve _veilFadeCurve = Interval(
   curve: Curves.easeInOut,
 );
 
-// ─────────────────────────── 曲线调参区 ───────────────────────────
-// 整个转场一共五条曲线，按「哪个方向、谁在动」分清楚，改的时候别串味：
-//
-//   _openCurve                打开：页面矩形从卡片矩形长到全屏 —— **主曲线**
-//   _closeCurve               关闭：同一段矩形收回去（见 returning 分支、飞行层，
-//                             以及 _VideoCardRectTween 的 returning 标志）
-//   _cardLayerOpenFadeCurve   打开：上层卡片（封面 + 标题 + 底色）淡出
-//   _cardLayerCloseFadeCurve  关闭：同上的淡出（卡片重新浮现）
-//   Curves.linear             Hero 自身的插值（不参与视觉，只为拿进度）
-//
-// 打开和关闭是两条**互相独立**的曲线（按曲线调试页给的参数分别指定），改一条不会
-// 影响另一条；但每条主曲线各自在三个地方被用着 —— 页面构建体、飞行层构建体、
-// `_VideoCardRectTween`。改主曲线时要确认这三处仍然是同一个名字。
-//
-// 参数写法与 CSS 的 `cubic-bezier(x1, y1, x2, y2)` 一一对应：
-// 控制点固定在 (0,0) 和 (1,1)，四个值就是中间两个控制点。
-// ─────────────────────────────────────────────────────────────────
-
-/// ── 打开曲线（去程主曲线）──
-///
-/// 页面矩形从「卡片矩形」长到「整个视口」走的就是它 —— 转场里影响最大的一条。
-///
-/// 现在是 `cubic-bezier(0.22, 0.77, 0.08, 1.0)`：
-///
-/// | 时间 | 0.05 | 0.10 | 0.15 | 0.22 | 0.30 | 0.40 | 0.66 | 1.00 |
-/// |---|---|---|---|---|---|---|---|---|
-/// | 展开 | 0.19 | 0.40 | 0.59 | 0.76 | 0.86 | 0.92 | 0.98 | 1.00 |
-///
-/// 手感：**一上来就是全力**（前 10% 时间已经铺开 40%，0.125 处过半，斜率峰值
-/// 在 x=0.09、约 4.3 —— 比内置任何一条都陡），中后段一路大幅减速，最后 60% 的
-/// 时间只补完最后 8%。读起来是"啪"地弹开、再缓缓坐实。
-///
-/// 因为它前 40% 就把几何跑完了，卡片淡出的窗口也得跟着前移，否则卡片会以放大后
-/// 的姿态在原地多停一截 —— 见 [_cardLayerOpenFadeCurve]。
-///
-/// 想换手感：直接改这 4 个数即可，或者换回内置曲线，例如
-/// `Curves.easeInOutCubicEmphasized` / `Curves.fastOutSlowIn` /
-/// `Curves.easeOutCubic`；要「提前铺满」就套一层 `Interval(0, 0.82, curve: ...)`。
 const Curve _openCurve = Cubic(0.22, 0.77, 0.08, 1.0);
 
-/// ── 关闭曲线（回程）──
-///
-/// 就是先前打开动画用的那条 `cubic-bezier(0.54, 0.15, 0.68, 0.88)`，现在挪到
-/// 关闭方向 —— 收缩进度走它：
-///
-/// | 时间 | 0.28 | 0.49 | 0.58 | 0.70 | 0.82 | 1.00 |
-/// |---|---|---|---|---|---|---|
-/// | 收缩 | 0.15 | 0.38 | 0.51 | 0.69 | 0.86 | 1.00 |
-///
-/// 手感：**先顿一下**（前 30% 只收回 15%）→ 中段最猛地收 → 末尾收住、稳稳落回
-/// 卡片。它和 [_cardLayerCloseFadeCurve] 是配套的（那组窗口原本就是按这条曲线的
-/// 形状调出来的），所以关闭方向不需要额外补偿。
+const Curve _openPortraitCurve = Cubic(0.28, 0.70, 0.12, 1.0);
+
+Curve _openCurveFor(bool horizontal) =>
+    horizontal ? _openCurve : _openPortraitCurve;
+
 const Curve _closeCurve = Cubic(0.54, 0.15, 0.68, 0.88);
 
-// The player decoder is heavier than ordinary page UI. Start it only after
-// that UI is visible, and keep it clear of the busiest stretch of the flight
-// (the page is still changing scale and the card layer is still compositing).
-// Starting it mid-animation makes decoder warm-up steal frames from the
-// animation, which reads as stutter.
-//
-// `_openCurve` 是"一上来就全力"：几何 0.36 处就铺到 0.9，卡片 0.46 淡尽 ——
-// 也就是说 0.55 之后画面上已经没有东西在动了（矩形只剩最后 1% 的微调）。
-// 所以这里从 0.85 收到 0.62：既落在"看得见的动画都结束了"之后，又把起播提前约
-// 80ms。实机上若发现收尾掉帧，调回 0.85 即可（代价是起播晚约 80ms）。
-const double _entryContentReadyAt = 0.62;
+const double _entryContentReadyAt = 0.88;
 
-/// ── 转场速度 ──
-///
-/// 去程 400 → 350ms、回程 320 → 280ms（各快约 12%）。之所以能直接砍时长而不是
-/// 动曲线：主曲线的形状决定"每一段各占多少比例"，它跟总时长无关 —— 缩短时长
-/// 整条节奏等比加快，手感不变，只是更快。
-///
-/// ⚠️ 打开方向现在是一条"前重"曲线：350ms 里真正看得见的运动只占前 ~40%
-/// （约 140ms），后 60% 几乎看不出变化。**别因为"后半段好像没动"就去压总时长**
-/// —— 打开方向想再快，应该改 `_openCurve` 的形状（比如把 P2 的 y 调到 0.9、
-/// 或让曲线更早到顶）。关闭曲线相反，它匀匀地填满了整个 280ms，压时长对它有效。
 const Duration videoPageTransitionDuration = Duration(milliseconds: 350);
 const Duration videoPageReverseTransitionDuration = Duration(milliseconds: 280);
 
-/// 页面内容要不要跟着矩形一起放大。
-///
-/// `true`（当前）= 详情页用 `BoxFit.cover` 缩进矩形，文字图片跟着一起长大，
-/// 读起来是"卡片长成了详情页"。
-///
-/// 代价是整页每一帧都在换缩放比 —— 转场里最贵的一项，低端机上光栅缓存会因此
-/// 频繁失效、反复把整页光栅化。实机嫌卡就改成 `false`：页面按 1:1 绘制、矩形
-/// 只当窗口把页面揭开，内容不再放大，GPU 立刻轻下来（观感从"卡片长大"变成
-/// "窗口揭开"）。卡片那层缩放的采样质量也一并降到 [FilterQuality.low]：放大场景下
-/// 双线性本身就比 mipmap 更锐，还免掉每帧生成 mipmap 链的开销（页面那层用的是
-/// `FittedBox`，它在这个版本没有采样质量参数，见那里的注释）。
 const bool _scalePageContent = true;
 
-/// 一次转场所需要的全部信息：源卡片本体（量起点矩形）和那个 context。
-///
-/// 注意这里**不存卡片 widget、也不存截图**：上层那层卡片是从 Hero 的
-/// flight shuttle 里拿的（见 [_buildFlightShuttle]），按下这一刻只需要几何。
+const double _paintEpsilon = 0.02;
+
+const bool _freezePageWhileFlying = true;
+
 typedef _PendingVideoTransition = ({
   Object tag,
   RenderBox box,
@@ -203,12 +74,15 @@ typedef _PendingVideoTransition = ({
 _PendingVideoTransition? _pendingVideoTransition;
 final _enteringVideoPages = <Object, Completer<bool>>{};
 
-/// Begin decoder setup only after the page is visibly taking over the card.
-Future<bool> waitForVideoPageEntry(Object? tag) async =>
-    await _enteringVideoPages[tag]?.future ?? true;
+Future<bool> waitForVideoPageEntry(Object? tag) async {
+  final entry = _enteringVideoPages[tag];
+  if (entry == null) return true;
+  return entry.future.timeout(
+    const Duration(milliseconds: 1200),
+    onTimeout: () => true,
+  );
+}
 
-/// For transparent cards, use the actual painted ancestor rather than a
-/// hard-coded surface role. Opaque cards pass their own Material color.
 Color transitionBackgroundOf(BuildContext context) {
   Color? result;
   context.visitAncestorElements((element) {
@@ -230,37 +104,9 @@ Color transitionBackgroundOf(BuildContext context) {
   return result ?? Theme.of(context).scaffoldBackgroundColor;
 }
 
-// ────────────────────────── 这一版转场长什么样 ──────────────────────────
-//
-// 两层叠在一起，共用一个矩形、一个进度（去程/回程各一条主曲线，见「曲线调参区」）：
-//
-//   ① 详情页自己长大。`pageRect` 从「卡片矩形」插值到「整个视口」，页面内容用
-//      `BoxFit.cover` 缩放进这个矩形 —— 所以文字和图片是跟着一起放大的，读起来
-//      是"卡片长成了详情页"，而不是拿一个窗口去揭开一张本来就全尺寸的页面。
-//
-//   ② 卡片本体盖在页面**之上**（飞行层，见 [_buildFlightShuttle]），走的也是
-//      `pageRect` 那一条 —— 卡片跟着页面一起放大、一起往左上角移，随进度淡出。
-//      它负责把"页面矩形刚越过卡片位置、里面显示的是详情页顶部被放大的一小块"
-//      这一段藏起来。竖卡横卡一视同仁 —— 横卡矩形是横向的，那一段跳变最明显。
-//      淡出窗口分三档（打开 · 横卡 0.10~0.46、打开 · 竖卡 0.16~0.64、关闭
-//      0.22~0.66，见上方常量区）。
-//
-// 为什么用卡片本体而不是一块纯色：颜色只能蒙住形状，蒙不住内容；横卡上
-// "左封面 + 标题"和"被放大的详情页顶部"差得远，只有把卡片原样盖着才读不出切换。
-// 卡片内容自己不带背景，所以它的底色由飞行层补上（[_FlightCardLayer] 里的
-// `ColoredBox`），放大后多出来的那块就成了卡片的背景。底色只铺在页面矩形之内
-// （矩形是从卡片那一格长出来的），不像铺满整屏那样在浅色主题下开场泛白。
-//
-//   ③ 卡片**之下**还垫着一层同样的底色（[_FlightCardLayer] 里那层 `veil`），
-//      比卡片晚 0.06 淡尽。卡片淡掉之后由它接着兜住那一块，所以卡片下面露出的
-//      不是"播放器的黑"，而是一段浅色 —— 浅色再随进度慢慢退成黑。横卡按宽度
-//      放大、高度只够到视口四分之一，盖不住底下的播放器，这一层就是为它准备的；
-//      竖卡虽然有底色能盖住，也一并垫上，让"消失"这件事本身变成一段渐变。
-
 bool hasPendingVideoCardTransition(Object tag) =>
     _pendingVideoTransition?.tag == tag;
 
-/// Keep only geometry: tapping no longer captures or filters a full-screen image.
 void _prepareVideoTransition(Object tag, BuildContext context) {
   final box = context.findRenderObject();
   if (box is RenderBox && box.hasSize) {
@@ -273,21 +119,18 @@ class _VideoCardRectTween extends RectTween {
     required super.begin,
     required super.end,
     this.returning = false,
+    this.openCurve = _openCurve,
   });
   final bool returning;
 
+  final Curve openCurve;
+
   @override
   Rect? lerp(double t) => returning
-      // 回程的 begin/end 就是「视口 → 卡片」，t 从 0 走到 1，直接用 [_closeCurve]
-      // 收拢回卡片位置即可；去程（push）用 [_openCurve] 展开。
-      //
-      // Hero 取这条 tween 是有方向的：push 用目标 hero（详情页那头，`returning`
-      // 为 false），pop 用源 hero（卡片那头，构造时就传了 `returning: true`）。
       ? Rect.lerp(begin, end, _closeCurve.transform(t))
-      : Rect.lerp(begin, end, _openCurve.transform(t));
+      : Rect.lerp(begin, end, openCurve.transform(t));
 }
 
-/// Retain GetX's playback/controller lifecycle, replacing only the visuals.
 class VideoPageTransitionRoute<T> extends GetPageRoute<T> {
   VideoPageTransitionRoute({required WidgetBuilder builder, super.settings})
     : super(page: () => Builder(builder: builder));
@@ -301,9 +144,6 @@ class VideoPageTransitionRoute<T> extends GetPageRoute<T> {
   void install() {
     super.install();
     if (_entryTag case final tag?) _enteringVideoPages[tag] = _entryReady;
-    // Listen to the real controller, not Hero's offstage proxy animation. The
-    // decoder begins only after the revealed page UI has taken over, but before
-    // the card finishes its final expansion.
     controller
       ?..addStatusListener(_entryStatus)
       ..addListener(_entryProgress);
@@ -344,8 +184,6 @@ class VideoPageTransitionRoute<T> extends GetPageRoute<T> {
     _gestureCommitted = true;
     final owner = navigator;
     if (isCurrent) owner?.pop();
-    // didPop already reverses from the current progress. The SDK's default
-    // commit restarts reverse(from: upperBound), replaying our visible shrink.
     final animationController = controller;
     void finish() {
       if (_gestureCompletion case final listener?) {
@@ -414,23 +252,12 @@ class VideoCardHero extends StatefulWidget {
 
   final Object tag;
 
-  /// 卡片底色（卡片所在页面背后透出来的那个颜色）。
-  ///
-  /// 转场期间它被用来铺满飞行层那张卡片（见 [_FlightCardLayer]）。
-  ///
-  /// 为什么需要：卡片内容自己往往不带背景（`VideoCardH` 就是一层透明的
-  /// Material），在列表里靠页面底色透上来才像"一张卡片"；放大之后矩形比内容高出
-  /// 一大截，多出来的那块也得继续是这个颜色。
   final Color surfaceColor;
   final Widget child;
   final bool preserveChildHeroes;
 
-  /// 封面 widget 的 key。**当前转场不使用它** —— 现在没有"只飞封面"那条路径，
-  /// 整张卡片一起淡。保留是为了让卡片端（`video_card_v.dart` /
-  /// `video_card_h.dart`）一行都不用改。
   final GlobalKey? coverKey;
 
-  /// 卡片圆角。卡片自身仍按它裁圆角。
   final double cornerRadius;
 
   @override
@@ -438,8 +265,6 @@ class VideoCardHero extends StatefulWidget {
 }
 
 class _VideoCardHeroState extends State<VideoCardHero> {
-  /// 封面相对卡片左上角的矩形。**当前转场不使用**（留着是因为卡片端还在传
-  /// `coverKey`，量一次不影响什么，将来要恢复"只飞封面"直接就能用）。
   Rect? _coverRect;
 
   @override
@@ -464,8 +289,6 @@ class _VideoCardHeroState extends State<VideoCardHero> {
     );
     return Listener(
       onPointerDown: (_) => _prepare(context),
-      // Dynamic cards contain independent image-preview Heroes. Keep the card
-      // flight anchor as their sibling, never an enclosing Hero.
       child: widget.preserveChildHeroes
           ? Stack(
               children: [
@@ -482,7 +305,6 @@ class _VideoCardHeroState extends State<VideoCardHero> {
     _prepareVideoTransition(widget.tag, context);
   }
 
-  /// 量出封面在卡片内的矩形。
   Rect? _measureCover(BuildContext cardContext) {
     final key = widget.coverKey;
     if (key == null) return null;
@@ -547,8 +369,6 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
-    // Hero measures its destination offstage with a fake completed animation.
-    // That is not a completed entry and must not enable the full-page exit.
     if (status == AnimationStatus.completed && _route?.offstage == false) {
       _entryCompleted = true;
     }
@@ -559,8 +379,6 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
         box.hasSize) {
       _sourceRect = box.localToGlobal(Offset.zero) & box.size;
     }
-    // PiliNara: the native Miuix backdrop-sampling pause lives in the Android
-    // Kotlin layer of Hyper-PiliPlus and is unavailable here, so it is omitted.
   }
 
   @override
@@ -577,78 +395,57 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
       builder: (context, constraints) {
         final size = constraints.biggest;
         final viewport = Offset.zero & size;
-        // 页面内容按视口尺寸布局一份，转场期间不变。里面的 `RepaintBoundary`
-        // 让这份内容只光栅化一次，每帧剩下的只是外面的裁剪与变换。
-        //
-        // 这一段是转场里最贵的地方：详情页是整屏内容，一旦每帧重新光栅化，
-        // 中低端机立刻掉帧。所以 `RepaintBoundary` 和「内容尺寸恒定」这两件事
-        // 都不能少 —— 变化的只有包着它的那个矩形。
         final pageContent = SizedBox.fromSize(
           size: size,
           child: RepaintBoundary(child: widget.child),
         );
         return AnimatedBuilder(
           animation: animation,
-          // 内容这份子树在两级 builder 之间原样传递，转场期间一次都不会重建。
           child: pageContent,
           builder: (context, child) {
-            // Interactive updates can report "forward" even while their value
-            // decreases. Keep the return composition until the gesture settles.
-            // (`_route` 在 didChangeDependencies 里存过一次，这里不再每帧
-            //  `ModalRoute.of` 去查继承树。)
             final reversing =
                 animation.status == AnimationStatus.reverse ||
                 (_route?.popGestureInProgress ?? false);
-            // Flutter diverts an unfinished push by reversing its existing
-            // Hero tween/shuttle. The page must retrace that same entry too,
-            // not start a second contraction from an assumed full-screen page.
             final returning = reversing && _entryCompleted;
             final box = context.findRenderObject();
             final origin = box is RenderBox && box.hasSize
                 ? box.localToGlobal(Offset.zero)
                 : Offset.zero;
             final source = _sourceRect!.shift(-origin);
-            final expansion = _openCurve.transform(animation.value);
+            final horizontal = _isHorizontalFlight(_sourceRect!.size, size);
+            final openCurve = _openCurveFor(horizontal);
+            final expansion = openCurve.transform(animation.value);
             final contraction = _closeCurve.transform(
               1 - animation.value,
             );
-            // 页面矩形：去程从「卡片矩形」插值到「整个视口」，回程反过来。
-            //
-            // 这是转场里唯一在动的几何：详情页以卡片的位置和大小起步，
-            // 一路长到铺满屏幕。因为页面内容是用 `BoxFit.cover` 缩放进这个
-            // 矩形的，文字和图片都跟着一起放大 —— 读起来就是"卡片本身长成了
-            // 详情页"，而不是拿一个窗口去揭开一张本来就全尺寸的页面。
-            //
-            // 页面之上那一层卡片在飞行层里，由 [_buildFlightShuttle] 负责 ——
-            // 它按**同一条曲线、同一组端点**算出自己的矩形（见 [_FlightCardLayer]），
-            // 所以两边永远是同一个矩形、同一时刻，卡片跟着页面一起长大。
-            // 改这里的曲线时，飞行层构建体和 `_VideoCardRectTween` 要一起改。
             final pageRect = returning
                 ? Rect.lerp(viewport, source, contraction)!
                 : Rect.lerp(source, viewport, expansion)!;
+            final scrimAlpha = _scrimOpacity * expansion;
+            final ticking =
+                !_freezePageWhileFlying ||
+                animation.status == AnimationStatus.completed;
+            final pageContentChild = TickerMode(
+              enabled: ticking,
+              child: child!,
+            );
             return Stack(
               fit: StackFit.expand,
               clipBehavior: Clip.none,
               children: [
-                // 压暗层：页面之外（首页那一层）盖一层黑，随展开进度加深。
-                // 展开中的详情页因此成为画面上唯一的亮点。
-                //
-                // 用 [expansion]（而不是回程的 contraction）是因为它在两个方向
-                // 上都是"展开程度"：去程 0 → 1、回程 1 → 0，所以同一行代码在
-                // 进入和退出时都正确 —— 返回一开始页面是全屏、首页本该最暗，
-                // 那时 expansion 正好是 1。
                 Positioned.fill(
                   key: const ValueKey('video-transition-scrim'),
                   child: IgnorePointer(
-                    child: ColoredBox(
-                      color: Colors.black.withValues(
-                        alpha: _scrimOpacity * expansion,
-                      ),
+                    child: CustomPaint(
+                      painter: scrimAlpha > _paintEpsilon
+                          ? _ScrimPainter(
+                              rect: pageRect,
+                              color: Colors.black.withValues(alpha: scrimAlpha),
+                            )
+                          : null,
                     ),
                   ),
                 ),
-                // 详情页本体。圆角保持卡片圆角不变 —— 它是"这是一张卡片"这件事
-                // 在整段动画里唯一不变的线索。
                 Positioned.fromRect(
                   key: const ValueKey('video-transition-page-position'),
                   rect: pageRect,
@@ -659,35 +456,20 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
                     ),
                     child: _scalePageContent
                         ? FittedBox(
-                            // cover = 等比缩放到填满矩形，多出来的部分裁掉。
-                            // 用 fill 会把页面拉变形（卡片矩形接近方形、视口是
-                            // 9:20），用 contain 则会在矩形里留出空白边。
                             fit: BoxFit.cover,
                             alignment: Alignment.topCenter,
-                            // 注意：别再想着给 FittedBox 传 filterQuality —— 这个
-                            // 版本（3.47）里它连 widget 带 RenderFittedBox 都已经
-                            // 没有这个参数了，写了直接编译失败（"No named parameter
-                            // with the name 'filterQuality'"）。采样质量由框架内部
-                            // 决定，这里没有旋钮，也不需要。
-                            child: child,
+                            child: pageContentChild,
                           )
                         : OverflowBox(
-                            // 性能档：页面按 1:1 绘制，矩形只当窗口把页面揭开，
-                            // 内容不放大。省掉每帧都在变的缩放比，
-                            // 低端机立刻轻下来（观感从"卡片长大"变成"窗口揭开"）。
                             alignment: Alignment.topCenter,
                             minWidth: 0,
                             minHeight: 0,
                             maxWidth: double.infinity,
                             maxHeight: double.infinity,
-                            child: child,
+                            child: pageContentChild,
                           ),
                   ),
                 ),
-                // Hero 的锚点铺满视口。它的 child（[_VideoPageSurface]）什么都不
-                // 画，在这个转场里只承担两件事：让 Hero 机制把源卡片的 child
-                // 摘掉（否则原卡片会和展开中的页面叠在一起），以及提供转场
-                // 进度 —— 飞行层的卡片就是靠它的 shuttle 画出来的。
                 Positioned.fill(
                   key: const ValueKey('video-transition-hero-position'),
                   child: IgnorePointer(
@@ -696,8 +478,11 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
                       curve: Curves.linear,
                       reverseCurve: Curves.linear,
                       transitionOnUserGestures: true,
-                      createRectTween: (begin, end) =>
-                          _VideoCardRectTween(begin: begin, end: end),
+                      createRectTween: (begin, end) => _VideoCardRectTween(
+                        begin: begin,
+                        end: end,
+                        openCurve: openCurve,
+                      ),
                       flightShuttleBuilder: _buildFlightShuttle,
                       child: const _VideoPageSurface(),
                     ),
@@ -712,7 +497,6 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
   }
 }
 
-/// 详情页端 Hero 的占位 anchor：它自己不绘制任何东西。
 class _VideoPageSurface extends StatelessWidget {
   const _VideoPageSurface();
 
@@ -720,11 +504,48 @@ class _VideoPageSurface extends StatelessWidget {
   Widget build(BuildContext context) => const SizedBox.expand();
 }
 
-/// 列表里那张真卡片的壳：按卡片圆角裁一刀，并带上飞行层要用的那几样信息
-/// （底色、圆角、内容）。
-///
-/// 注意飞行层**不**复用它这个 `ClipRRect` —— 飞行层自己按同一圆角裁，只从它这里
-/// 取 `cardColor` / `radius` / 内容，省掉一层重复的裁剪。
+class _ScrimPainter extends CustomPainter {
+  const _ScrimPainter({required this.rect, required this.color});
+
+  final Rect rect;
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final width = size.width;
+    final height = size.height;
+    final left = _clamp(rect.left - _cardRadius, 0, width);
+    final right = _clamp(rect.right + _cardRadius, 0, width);
+    final top = _clamp(rect.top - _cardRadius, 0, height);
+    final bottom = _clamp(rect.bottom + _cardRadius, 0, height);
+    if (right <= left || bottom <= top) {
+      canvas.drawRect(Offset.zero & size, paint);
+      return;
+    }
+    if (top > 0) {
+      canvas.drawRect(Rect.fromLTRB(0, 0, width, top), paint);
+    }
+    if (bottom < height) {
+      canvas.drawRect(Rect.fromLTRB(0, bottom, width, height), paint);
+    }
+    if (left > 0) {
+      canvas.drawRect(Rect.fromLTRB(0, top, left, bottom), paint);
+    }
+    if (right < width) {
+      canvas.drawRect(Rect.fromLTRB(right, top, width, bottom), paint);
+    }
+  }
+
+  static double _clamp(double value, double min, double max) =>
+      value < min ? min : (value > max ? max : value);
+
+  @override
+  bool shouldRepaint(_ScrimPainter oldDelegate) =>
+      oldDelegate.rect != rect || oldDelegate.color != color;
+}
+
 class _CardSurface extends StatelessWidget {
   const _CardSurface({
     required this.child,
@@ -738,12 +559,8 @@ class _CardSurface extends StatelessWidget {
   final Widget? flightChild;
   final double radius;
 
-  /// 卡片底色。飞行层拿它把整个矩形铺满（见 [_FlightCardLayer]）——
-  /// 卡片内容本身不带背景，靠这一层才重新变回"一张卡片"。
   final Color cardColor;
 
-  /// 封面在卡片里的矩形读取器。**当前转场不使用**，保留是因为卡片端还在传
-  /// `coverKey`，量一次不费什么，将来要恢复"只飞封面"直接就能用。
   final ValueGetter<Rect?>? coverReader;
 
   @override
@@ -753,16 +570,74 @@ class _CardSurface extends StatelessWidget {
   );
 }
 
-/// 飞行层 = **卡片本体**，跟着详情页一起放大、一起移动。
-///
-/// 页面那边（[_VideoPageHeroTargetState]）把矩形从「卡片矩形」插值到「整个视口」；
-/// 这一层走的是同一条路 —— 同样的两个端点、同一条主曲线（去 [_openCurve] /
-/// 回 [_closeCurve]）、同一个进度。
-/// 两边因此永远重合：卡片不会钉在原地等页面长大，也不会比页面快一步或慢半拍。
-///
-/// 两个端点是**量**出来的（源卡片矩形、详情页矩形），进度直接取详情页那条路由的
-/// 动画 —— 就是页面自己用的那个 `Animation` 对象，所以既不依赖 Hero 内部用哪条
-/// 曲线，也不存在"页面用路由动画、卡片用飞行层动画"这种代差。
+class _NavShape {
+  const _NavShape(this.rect, this.radius);
+
+  final Rect rect;
+
+  final double radius;
+
+  _NavShape shift(Offset delta) => _NavShape(rect.shift(delta), radius);
+}
+
+const double _navCutInflate = 2;
+
+_NavShape? _bottomNavShape(BuildContext context) {
+  RenderBox? navBox;
+  double? layoutWidth;
+  context.visitAncestorElements((element) {
+    if (element.widget is! MainLayout) return true;
+    final renderObject = element.renderObject;
+    if (renderObject is SlottedContainerRenderObjectMixin<MainType, RenderBox>) {
+      if (renderObject is RenderBox && renderObject.hasSize) {
+        layoutWidth = renderObject.size.width;
+      }
+      final nav = renderObject.childForSlot(MainType.bottomNav);
+      if (nav != null && nav.attached && nav.hasSize) {
+        navBox = nav;
+      }
+    }
+    return false;
+  });
+  final box = navBox;
+  if (box == null) return null;
+
+  var rect = box.localToGlobal(Offset.zero) & box.size;
+  final floating = layoutWidth != null && rect.width < layoutWidth - 0.5;
+  if (floating) {
+    rect = _visualBarRect(box, rect);
+  }
+  return _NavShape(
+    rect.inflate(_navCutInflate),
+    floating ? rect.height / 2 : 0.0,
+  );
+}
+
+Rect _visualBarRect(RenderBox box, Rect rect) {
+  var current = box;
+  for (var depth = 0; depth < 4; depth++) {
+    RenderBox? only;
+    var count = 0;
+    current.visitChildren((child) {
+      count++;
+      if (child is RenderBox) only = child;
+    });
+    final child = only;
+    if (count != 1 || child == null || !child.attached || !child.hasSize) break;
+    final childRect = child.localToGlobal(Offset.zero) & child.size;
+    final shrunk =
+        childRect.width < rect.width - 0.5 ||
+        childRect.height < rect.height - 0.5;
+    final grew =
+        childRect.width > rect.width + 0.5 ||
+        childRect.height > rect.height + 0.5;
+    if (!shrunk || grew) break;
+    rect = childRect;
+    current = child;
+  }
+  return rect;
+}
+
 Widget _buildFlightShuttle(
   BuildContext flightContext,
   Animation<double> animation,
@@ -770,7 +645,6 @@ Widget _buildFlightShuttle(
   BuildContext fromHeroContext,
   BuildContext toHeroContext,
 ) {
-  // 回程时 from/to 互换：卡片始终是"另一头"。
   final returning = direction == HeroFlightDirection.pop;
   final cardContext = returning ? toHeroContext : fromHeroContext;
   final pageContext = returning ? fromHeroContext : toHeroContext;
@@ -781,55 +655,37 @@ Widget _buildFlightShuttle(
   final cardSurface = cardHero.child as _CardSurface;
   final cardBox = cardContext.findRenderObject();
   final pageBox = pageContext.findRenderObject();
-  // 卡片复用、列表回收之后这个盒子可能已经不在树上了，这时不画，退回"只有页面"
-  // 的老样子 —— 观感打折总比画飞了好。详情页那头量不到同理：少了终点，"长到哪"
-  // 就无从谈起。
   if (cardBox is! RenderBox || !cardBox.hasSize || cardBox.size.isEmpty) {
     return const SizedBox.shrink();
   }
   if (pageBox is! RenderBox || !pageBox.hasSize || pageBox.size.isEmpty) {
     return const SizedBox.shrink();
   }
+  final bottomNav = returning ? _bottomNavShape(cardContext) : null;
   return _FlightCardLayer(
-    // 进度取详情页那条路由的动画（Hero 给的那个只当兜底）：和页面用的是同一个
-    // 对象、同一帧同一个值，卡片层和页面因此永远对得上。
     animation: ModalRoute.of(pageContext)?.animation ?? animation,
     flightContext: flightContext,
     returning: returning,
-    // 两端都以屏幕坐标量，飞行层内部再减掉 Hero 插值矩形的原点换算过去。
     cardRect: cardBox.localToGlobal(Offset.zero) & cardBox.size,
     viewportRect: pageBox.localToGlobal(Offset.zero) & pageBox.size,
+    bottomNav: bottomNav,
     cardColor: cardSurface.cardColor,
     radius: cardSurface.radius,
     card: InheritedTheme.captureAll(
       cardContext,
       Material(
         type: MaterialType.transparency,
-        // 直接取卡片内容，不再套 `_CardSurface` —— 那里面还有一层 `ClipRRect`，
-        // 而飞行层自己已经按同一圆角裁过了（见 [_FlightCardLayer]），套两层
-        // 只是白白多一个裁剪层。
-        child: cardSurface.flightChild ?? cardSurface.child,
+        child: RepaintBoundary(
+          child: SizedBox.fromSize(
+            size: cardBox.size,
+            child: cardSurface.flightChild ?? cardSurface.child,
+          ),
+        ),
       ),
     ),
   );
 }
 
-/// 跟着页面一起长大的那层卡片。
-///
-/// 里面画两样：
-///
-///   ① **卡片底色**铺满整个矩形 —— 卡片内容放大后矩形比它高出一大截，
-///      多出来的那块必须是卡片自己的背景色，否则露出的就是详情页，穿帮；
-///   ② **卡片内容**按宽度等比放大（`rect.width / 卡片宽`）、锚在左上角 ——
-///      它的左右边缘因此始终贴着矩形的左右边缘（也就是详情页的左右边缘），
-///      整段动画读起来就是"这张卡片被拉大成详情页"。
-///
-/// 卡片内容先按**原尺寸**（`cardRect.size`）布局、再整体缩放，而不是直接把放大后的
-/// 尺寸喂给它：卡片排版是跟着宽度走的，直接塞一个大宽度进去，封面比例、标题换行
-/// 都会变，那就不是"同一张卡片放大"了。外面包了一层 `RepaintBoundary`，这份原尺寸
-/// 内容就只光栅化一次，之后每帧只剩变换在动。
-///
-/// 缩放采样质量用 [FilterQuality.low]：放大场景下双线性比 mipmap 又快又锐。
 class _FlightCardLayer extends StatefulWidget {
   const _FlightCardLayer({
     required this.animation,
@@ -837,6 +693,7 @@ class _FlightCardLayer extends StatefulWidget {
     required this.returning,
     required this.cardRect,
     required this.viewportRect,
+    this.bottomNav,
     required this.cardColor,
     required this.radius,
     required this.card,
@@ -845,20 +702,16 @@ class _FlightCardLayer extends StatefulWidget {
   final Animation<double> animation;
   final BuildContext flightContext;
 
-  /// true = 回程：几何走 [_closeCurve]、淡出窗口走 [_cardLayerCloseFadeCurve]。
-  /// false = 去程，两者分别走 [_openCurve] / [_cardLayerOpenFadeCurve]。
   final bool returning;
 
-  /// 源卡片在屏幕上的矩形（起点）。
   final Rect cardRect;
 
-  /// 详情页在屏幕上的矩形（终点，通常就是整个视口）。
   final Rect viewportRect;
 
-  /// 卡片底色。
+  final _NavShape? bottomNav;
+
   final Color cardColor;
 
-  /// 卡片圆角。
   final double radius;
 
   final Widget card;
@@ -868,18 +721,10 @@ class _FlightCardLayer extends StatefulWidget {
 }
 
 class _FlightCardLayerState extends State<_FlightCardLayer> {
-  /// 圆角只跟 `widget.radius` 有关，算一次就够 —— 每帧新建 `BorderRadius`
-  /// 会让 `ClipRRect` 每帧走一遍 `updateRenderObject` 比较。
   late final BorderRadius _radius = BorderRadius.all(
     Radius.circular(widget.radius),
   );
 
-  /// 第一帧先不画。
-  ///
-  /// 飞行层的盒子要等父级 Stack 走完一次 layout，`localToGlobal` 才读得到它被
-  /// 摆在哪儿（偏移量是 layout 阶段写进 parentData 的），第一帧量出来是屏幕原点，
-  /// 会把卡片层整体画偏一张卡片的距离、闪一下。等一帧再画，这点延迟看不出来 ——
-  /// 那一帧里页面的展开量还不到 2%，矩形基本压在卡片原来那一格上。
   bool _measured = false;
 
   @override
@@ -892,46 +737,28 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
 
   @override
   Widget build(BuildContext context) {
-    // Hero 把 shuttle 缓存起来当 `AnimatedBuilder.child` 用（`shuttle ??= ...`），
-    // 所以它只会被建一次 —— 每一帧的重建必须由这里自己的 AnimatedBuilder 负责，
-    // 否则卡片层会停在第一帧的透明度和位置上不动。
     return AnimatedBuilder(
       animation: widget.animation,
       child: widget.card,
       builder: (context, child) {
-        // 进度 = 详情页路由动画的值：去程 0 → 1，回程 1 → 0。
         final progress = widget.animation.value;
-        // 横卡 / 横屏：卡片跟展开中的页面形状差得远（横向 vs 竖长），淡出要早，
-        // 而且它放大后盖不住底下那块页面，得靠垫层接住。
-        // 判据同时覆盖两种情况 —— 横卡在竖屏下点开（卡片矩形 1.79:1），以及
-        // 横屏下点开任何卡片（视口自己就比高宽）。
-        final horizontal =
-            widget.cardRect.width >= widget.cardRect.height * _horizontalAspect ||
-            widget.viewportRect.width > widget.viewportRect.height;
-        // 卡片的不透明度跟进度走。打开方向竖卡横卡各有一套窗口（见上方常量区），
-        // 关闭方向共用一套；三条都用同一行算，在两个方向上都自动是"从有到无"。
+        final horizontal = _isHorizontalFlight(
+          widget.cardRect.size,
+          widget.viewportRect.size,
+        );
         final fadeCurve = widget.returning
             ? _cardLayerCloseFadeCurve
             : (horizontal
                   ? _cardLayerOpenFadeCurve
                   : _cardLayerPortraitOpenFadeCurve);
         final cardAlpha = 1 - fadeCurve.transform(progress);
-        // 垫层比卡片退得慢：progress 0 时满、[_veilFadeEnd] 处散尽。
-        //
-        // 只在打开方向垫：关闭时页面本来就是从全屏收回来的，起点就是它自己，
-        // 不存在"突然露出一块黑"这回事，垫上去反而让收回的过程发闷。
         final veilAlpha = widget.returning
             ? 0.0
             : 1 - _veilFadeCurve.transform(progress);
-        if (!_measured || (cardAlpha <= 0.002 && veilAlpha <= 0.002)) {
+        if (!_measured ||
+            (cardAlpha <= _paintEpsilon && veilAlpha <= _paintEpsilon)) {
           return const SizedBox.shrink();
         }
-        // 矩形：和 [_VideoPageHeroTargetState] 里那条 `pageRect` 是同一套算法 ——
-        // 同一组端点、同一条曲线、同一个进度。页面长到哪，卡片就长到哪。
-        //
-        // 去程（含"中途被打断、倒着放回去"那种）用 [_openCurve] 往前插值；
-        // 回程用 [_closeCurve] 收回去。这两条曲线在页面构建体和 `_VideoCardRectTween`
-        // 里各有一处一模一样的使用，改曲线时三处要一起改。
         final rect = widget.returning
             ? Rect.lerp(
                 widget.viewportRect,
@@ -941,90 +768,122 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
             : Rect.lerp(
                 widget.cardRect,
                 widget.viewportRect,
-                _openCurve.transform(progress),
+                _openCurveFor(horizontal).transform(progress),
               )!;
         final box = widget.flightContext.findRenderObject();
         final flightOrigin = box is RenderBox && box.hasSize
             ? box.localToGlobal(Offset.zero)
             : Offset.zero;
         final localRect = rect.shift(-flightOrigin);
-        // 卡片内容放大到与矩形同宽 —— 系数就是宽度比，所以左右边缘永远贴着矩形。
         final scale = rect.width / widget.cardRect.width;
-        return Stack(
-          fit: StackFit.expand,
-          clipBehavior: Clip.none,
-          children: [
-            // 垫层：卡片之下那层底色，比卡片晚退场（见上方常量区）。卡片淡掉
-            // 之后先由它接住那一块 —— 读起来是"卡片 → 浅色 → 慢慢变黑"，而不是
-            // "卡片 → 播放器的黑"。横卡按宽度放大后高度只够到视口四分之一，
-            // 底下那一大块本来就盖不住，这一层主要是为它准备的。
-            //
-            // 和卡片共用同一块矩形、同一个圆角：不外扩到矩形之外（那儿还是首页，
-            // 铺出去浅色主题下会整屏泛白），四角也不会多出直角来。
-            if (veilAlpha > 0.002)
-              Positioned.fromRect(
-                key: const ValueKey('video-transition-card-veil'),
-                rect: localRect,
-                child: ClipRRect(
-                  borderRadius: _radius,
-                  child: IgnorePointer(
-                    child: ColoredBox(
-                      color: widget.cardColor.withValues(alpha: veilAlpha),
-                    ),
-                  ),
-                ),
-              ),
-            if (cardAlpha > 0.002)
-              // 卡片本体：底色铺满整个矩形 + 内容按宽度等比放大。
-              // （`cardAlpha` 已经在上面的提前返回里保证 > 0.002，这一层一定画。）
+        final nav = widget.bottomNav?.shift(-flightOrigin);
+          final content = Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
               Positioned.fromRect(
                 key: const ValueKey('video-transition-card-layer'),
                 rect: localRect,
-                child: Opacity(
-                  opacity: cardAlpha,
-                  child: ClipRRect(
-                    borderRadius: _radius,
-                    child: ColoredBox(
-                      // 卡片底色铺满整个矩形：卡片内容自己不带背景，靠这一层才
-                      // 重新变回"一张卡片"，多出来的那块也成了它的背景。
-                      color: widget.cardColor,
-                      child: OverflowBox(
-                        // `Positioned.fromRect` 给的是紧约束，直接把固定尺寸的卡片
-                        // 塞进去会被压成矩形大小；先解约束再缩放。
-                        alignment: Alignment.topLeft,
-                        minWidth: 0,
-                        minHeight: 0,
-                        maxWidth: double.infinity,
-                        maxHeight: double.infinity,
-                        child: Transform.scale(
-                          scale: scale,
-                          alignment: Alignment.topLeft,
-                          // 卡片被放大数倍，mipmap（medium）在放大方向上只会更糊、
-                          // 还多一道每帧生成 mipmap 链的开销；双线性（low）这里
-                          // 既更快也更锐。
-                          //
-                          // `Transform.scale` 有 `filterQuality` 这个参数，可以写；
-                          // 别顺手照抄到上面的 `FittedBox` 上 —— 那个没有（细节见
-                          // 页面那处的注释）。
-                          filterQuality: FilterQuality.low,
-                          child: RepaintBoundary(
-                            // 卡片内容（封面图 + 标题）只按原尺寸光栅化一次，
-                            // 之后每帧只更新外面的变换 —— 这一条是转场流畅度的
-                            // 关键：没有它，每帧都要把放大后的卡片重新光栅化。
-                            child: SizedBox.fromSize(
-                              size: widget.cardRect.size,
-                              child: child,
+                child: ClipRRect(
+                  borderRadius: _radius,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    clipBehavior: Clip.none,
+                    children: [
+                      if (veilAlpha > _paintEpsilon)
+                        Positioned.fill(
+                          key: const ValueKey('video-transition-card-veil'),
+                          child: IgnorePointer(
+                            child: ColoredBox(
+                              color: widget.cardColor.withValues(
+                                alpha: veilAlpha,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
+                      if (cardAlpha > _paintEpsilon)
+                        Positioned.fill(
+                          child: Opacity(
+                            opacity: cardAlpha,
+                            child: ColoredBox(
+                              color: widget.cardColor,
+                              child: OverflowBox(
+                                alignment: Alignment.topLeft,
+                                minWidth: 0,
+                                minHeight: 0,
+                                maxWidth: double.infinity,
+                                maxHeight: double.infinity,
+                                child: Transform.scale(
+                                  scale: scale,
+                                  alignment: Alignment.topLeft,
+                                  filterQuality: FilterQuality.low,
+                                  child: child,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
-          ],
+            ],
+          );
+        if (nav == null) {
+          return content;
+        }
+        if (nav.radius <= 0) {
+          return ClipRect(
+            clipper: _BottomBarClipper(nav.rect.top),
+            child: content,
+          );
+        }
+        return ClipPath(
+          clipper: _BottomNavHoleClipper(nav),
+          child: content,
         );
       },
     );
   }
+}
+
+class _BottomBarClipper extends CustomClipper<Rect> {
+  const _BottomBarClipper(this.bottom);
+
+  final double bottom;
+
+  @override
+  Rect getClip(Size size) {
+    final raw = bottom;
+    final clamped = raw < 0
+        ? 0.0
+        : (raw > size.height ? size.height : raw);
+    return Rect.fromLTRB(0, 0, size.width, clamped);
+  }
+
+  @override
+  bool shouldReclip(_BottomBarClipper oldClipper) =>
+      oldClipper.bottom != bottom;
+}
+
+class _BottomNavHoleClipper extends CustomClipper<Path> {
+  const _BottomNavHoleClipper(this.nav);
+
+  final _NavShape nav;
+
+  @override
+  Path getClip(Size size) {
+    final maxRadius = nav.rect.shortestSide / 2;
+    final radius = nav.radius < maxRadius ? nav.radius : maxRadius;
+    return Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addRRect(
+        RRect.fromRectAndRadius(nav.rect, Radius.circular(radius)),
+      );
+  }
+
+  @override
+  bool shouldReclip(_BottomNavHoleClipper oldClipper) =>
+      oldClipper.nav.rect != nav.rect || oldClipper.nav.radius != nav.radius;
 }
