@@ -9,7 +9,7 @@ const double _cardRadius = 12;
 const double _scrimOpacity = 0.35;
 
 const double _cardLayerOpenHoldUntil = 0.10;
-const double _cardLayerOpenFadeEnd = 0.46;
+const double _cardLayerOpenFadeEnd = 0.33;
 const Curve _cardLayerOpenFadeCurve = Interval(
   _cardLayerOpenHoldUntil,
   _cardLayerOpenFadeEnd,
@@ -40,7 +40,7 @@ bool _isHorizontalFlight(Size card, Size viewport) =>
     card.width >= card.height * _horizontalAspect ||
     viewport.width > viewport.height;
 
-const double _veilFadeEnd = 0.70;
+const double _veilFadeEnd = 0.37;
 const Curve _veilFadeCurve = Interval(
   0,
   _veilFadeEnd,
