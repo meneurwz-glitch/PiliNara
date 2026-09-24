@@ -45,6 +45,10 @@ const Curve _veilFadeCurve = Interval(
   curve: Curves.easeInOut,
 );
 
+const double _cardOpenTopFadeRatio = 0.276;
+
+const double _cardOpenTopFadeFeather = 48;
+
 const Curve _openCurve = Cubic(0.22, 0.77, 0.08, 1.0);
 
 const Curve _openPortraitCurve = Cubic(0.28, 0.70, 0.12, 1.0);
@@ -825,22 +829,57 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
             ),
           ],
         );
+        Widget layer = content;
+        if (!widget.returning && horizontal) {
+          final boundary =
+              widget.viewportRect.height * _cardOpenTopFadeRatio - rect.top;
+          if (boundary + _cardOpenTopFadeFeather > 0) {
+            layer = ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (bounds) =>
+                  _cardOpenTopFadeShader(bounds, boundary),
+              child: layer,
+            );
+          }
+        }
         if (nav == null) {
-          return content;
+          return layer;
         }
         if (nav.radius <= 0) {
           return ClipRect(
             clipper: _BottomBarClipper(nav.rect.top),
-            child: content,
+            child: layer,
           );
         }
         return ClipPath(
           clipper: _BottomNavHoleClipper(nav),
-          child: content,
+          child: layer,
         );
       },
     );
   }
+}
+
+Shader _cardOpenTopFadeShader(Rect bounds, double startY) {
+  final double height = bounds.height > 1 ? bounds.height : 1;
+  double s0 = startY / height;
+  if (s0 < 0) {
+    s0 = 0;
+  } else if (s0 > 0.999) {
+    s0 = 0.999;
+  }
+  double s1 = (startY + _cardOpenTopFadeFeather) / height;
+  if (s1 < s0 + 0.001) {
+    s1 = s0 + 0.001;
+  } else if (s1 > 1) {
+    s1 = 1;
+  }
+  return LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: const [Color(0x00000000), Color(0xFFFFFFFF)],
+    stops: [s0, s1],
+  ).createShader(bounds);
 }
 
 class _BottomBarClipper extends CustomClipper<Rect> {
