@@ -507,45 +507,36 @@ class _VideoPageSurface extends StatelessWidget {
 }
 
 class _ScrimPainter extends CustomPainter {
-  const _ScrimPainter({required this.rect, required this.color});
+  const _ScrimPainter({
+    required this.rect,
+    required this.color,
+    this.radius = _cardRadius,
+  });
 
   final Rect rect;
 
   final Color color;
 
+  final double radius;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    final width = size.width;
-    final height = size.height;
-    final left = _clamp(rect.left - _cardRadius, 0, width);
-    final right = _clamp(rect.right + _cardRadius, 0, width);
-    final top = _clamp(rect.top - _cardRadius, 0, height);
-    final bottom = _clamp(rect.bottom + _cardRadius, 0, height);
-    if (right <= left || bottom <= top) {
-      canvas.drawRect(Offset.zero & size, paint);
-      return;
-    }
-    if (top > 0) {
-      canvas.drawRect(Rect.fromLTRB(0, 0, width, top), paint);
-    }
-    if (bottom < height) {
-      canvas.drawRect(Rect.fromLTRB(0, bottom, width, height), paint);
-    }
-    if (left > 0) {
-      canvas.drawRect(Rect.fromLTRB(0, top, left, bottom), paint);
-    }
-    if (right < width) {
-      canvas.drawRect(Rect.fromLTRB(right, top, width, bottom), paint);
-    }
+    final maxRadius = rect.shortestSide / 2;
+    final holeRadius = radius < maxRadius ? radius : maxRadius;
+    final path = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addRRect(
+        RRect.fromRectAndRadius(rect, Radius.circular(holeRadius)),
+      );
+    canvas.drawPath(path, Paint()..color = color);
   }
-
-  static double _clamp(double value, double min, double max) =>
-      value < min ? min : (value > max ? max : value);
 
   @override
   bool shouldRepaint(_ScrimPainter oldDelegate) =>
-      oldDelegate.rect != rect || oldDelegate.color != color;
+      oldDelegate.rect != rect ||
+      oldDelegate.color != color ||
+      oldDelegate.radius != radius;
 }
 
 class _CardSurface extends StatelessWidget {
