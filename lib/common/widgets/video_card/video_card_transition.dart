@@ -633,6 +633,13 @@ Rect _visualBarRect(RenderBox box, Rect rect) {
   return rect;
 }
 
+Offset _flightBoxOrigin(BuildContext context) {
+  final box = context.findRenderObject();
+  return box is RenderBox && box.hasSize
+      ? box.localToGlobal(Offset.zero)
+      : Offset.zero;
+}
+
 Widget _buildFlightShuttle(
   BuildContext flightContext,
   Animation<double> animation,
@@ -750,7 +757,7 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
         final veilAlpha = widget.returning || !horizontal
             ? 0.0
             : 1 - _veilFadeCurve.transform(progress);
-        if (!_measured ||
+        if ((!_measured && !horizontal) ||
             (cardAlpha <= _paintEpsilon && veilAlpha <= _paintEpsilon)) {
           return const SizedBox.shrink();
         }
@@ -765,10 +772,9 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
                 _closeCurve.transform(1 - progress),
               )!
             : Rect.lerp(widget.cardRect, widget.viewportRect, flightProgress)!;
-        final box = widget.flightContext.findRenderObject();
-        final flightOrigin = box is RenderBox && box.hasSize
-            ? box.localToGlobal(Offset.zero)
-            : Offset.zero;
+        final flightOrigin = horizontal
+            ? rect.topLeft
+            : _flightBoxOrigin(widget.flightContext);
         final localRect = rect.shift(-flightOrigin);
         final scale = rect.width / widget.cardRect.width;
         final nav = widget.bottomNav?.shift(-flightOrigin);
