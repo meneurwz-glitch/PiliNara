@@ -42,6 +42,14 @@ const Curve _backdropCloseFadeCurve = Interval(
   curve: Curves.easeInCubic,
 );
 
+const double _statusBarCoverSolidUntil = 0.60;
+const double _statusBarCoverFadeFrom = 0.92;
+const Curve _statusBarCoverFadeCurve = Interval(
+  _statusBarCoverSolidUntil,
+  _statusBarCoverFadeFrom,
+  curve: Curves.easeInCubic,
+);
+
 const double _horizontalAspect = 1.35;
 
 bool _isHorizontalFlight(Size card, Size viewport) =>
@@ -604,6 +612,22 @@ class _CardBackdropPainter extends CustomPainter {
       oldDelegate.radius != radius;
 }
 
+class _RectFillPainter extends CustomPainter {
+  const _RectFillPainter({required this.rect, required this.color});
+
+  final Rect rect;
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) =>
+      canvas.drawRect(rect, Paint()..color = color);
+
+  @override
+  bool shouldRepaint(_RectFillPainter oldDelegate) =>
+      oldDelegate.rect != rect || oldDelegate.color != color;
+}
+
 class _CardSurface extends StatelessWidget {
   const _CardSurface({
     required this.child,
@@ -815,8 +839,13 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
         final backdropAlpha = widget.returning
             ? 1 - _backdropCloseFadeCurve.transform(progress)
             : cardAlpha;
+        final statusBarAlpha = !widget.returning && !horizontal
+            ? 1 - _statusBarCoverFadeCurve.transform(progress)
+            : 0.0;
         if (!_measured ||
-            (cardAlpha <= _paintEpsilon && backdropAlpha <= _paintEpsilon)) {
+            (cardAlpha <= _paintEpsilon &&
+                backdropAlpha <= _paintEpsilon &&
+                statusBarAlpha <= _paintEpsilon)) {
           return const SizedBox.shrink();
         }
         final openProgress = _openCurveFor(horizontal).transform(progress);
@@ -838,6 +867,16 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
         final localRect = rect.shift(-flightOrigin);
         final localPageRect = pageRect.shift(-flightOrigin);
         final scale = rect.width / widget.cardRect.width;
+        final barHeight = MediaQuery.viewPaddingOf(context).top;
+        final scaleW = pageRect.width / widget.viewportRect.width;
+        final scaleH = pageRect.height / widget.viewportRect.height;
+        final pageScale = scaleW > scaleH ? scaleW : scaleH;
+        final localStatusBarRect = Rect.fromLTWH(
+          localPageRect.left,
+          localPageRect.top,
+          localPageRect.width,
+          barHeight * pageScale,
+        );
         final showBackdrop =
             backdropAlpha > _paintEpsilon &&
             (!widget.returning || cardAlpha < 1 - _paintEpsilon);
@@ -861,6 +900,16 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
                     : null,
               ),
             ),
+            if (statusBarAlpha > _paintEpsilon)
+              Positioned.fill(
+                key: const ValueKey('video-transition-status-bar-cover'),
+                child: CustomPaint(
+                  painter: _RectFillPainter(
+                    rect: localStatusBarRect,
+                    color: widget.cardColor.withValues(alpha: statusBarAlpha),
+                  ),
+                ),
+              ),
             Positioned.fromRect(
               key: const ValueKey('video-transition-card-layer'),
               rect: localRect,
