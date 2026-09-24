@@ -50,6 +50,14 @@ const Curve _statusBarCoverFadeCurve = Interval(
   curve: Curves.easeInCubic,
 );
 
+const double _statusBarCloseCoverSolidUntil = 0.70;
+const double _statusBarCloseCoverFadeFrom = 0.86;
+const Curve _statusBarCloseCoverFadeCurve = Interval(
+  _statusBarCloseCoverSolidUntil,
+  _statusBarCloseCoverFadeFrom,
+  curve: Curves.easeInCubic,
+);
+
 const double _horizontalAspect = 1.35;
 
 bool _isHorizontalFlight(Size card, Size viewport) =>
@@ -613,19 +621,35 @@ class _CardBackdropPainter extends CustomPainter {
 }
 
 class _RectFillPainter extends CustomPainter {
-  const _RectFillPainter({required this.rect, required this.color});
+  const _RectFillPainter({
+    required this.rect,
+    required this.clip,
+    required this.color,
+    this.radius = _cardRadius,
+  });
 
   final Rect rect;
 
+  final Rect clip;
+
   final Color color;
 
+  final double radius;
+
   @override
-  void paint(Canvas canvas, Size size) =>
-      canvas.drawRect(rect, Paint()..color = color);
+  void paint(Canvas canvas, Size size) {
+    final maxRadius = clip.shortestSide / 2;
+    final r = radius < maxRadius ? radius : maxRadius;
+    canvas.clipRRect(RRect.fromRectAndRadius(clip, Radius.circular(r)));
+    canvas.drawRect(rect, Paint()..color = color);
+  }
 
   @override
   bool shouldRepaint(_RectFillPainter oldDelegate) =>
-      oldDelegate.rect != rect || oldDelegate.color != color;
+      oldDelegate.rect != rect ||
+      oldDelegate.clip != clip ||
+      oldDelegate.color != color ||
+      oldDelegate.radius != radius;
 }
 
 class _CardSurface extends StatelessWidget {
@@ -839,9 +863,9 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
         final backdropAlpha = widget.returning
             ? 1 - _backdropCloseFadeCurve.transform(progress)
             : cardAlpha;
-        final statusBarAlpha = !widget.returning && !horizontal
-            ? 1 - _statusBarCoverFadeCurve.transform(progress)
-            : 0.0;
+        final statusBarAlpha = widget.returning
+            ? 1 - _statusBarCloseCoverFadeCurve.transform(progress)
+            : 1 - _statusBarCoverFadeCurve.transform(progress);
         if (!_measured ||
             (cardAlpha <= _paintEpsilon &&
                 backdropAlpha <= _paintEpsilon &&
@@ -906,7 +930,9 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
                 child: CustomPaint(
                   painter: _RectFillPainter(
                     rect: localStatusBarRect,
+                    clip: localPageRect,
                     color: widget.cardColor.withValues(alpha: statusBarAlpha),
+                    radius: widget.radius,
                   ),
                 ),
               ),
