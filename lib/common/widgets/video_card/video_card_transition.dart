@@ -47,13 +47,6 @@ const Curve _veilFadeCurve = Interval(
   curve: Curves.easeInOut,
 );
 
-const double _portraitVeilFadeEnd = 0.50;
-const Curve _portraitVeilFadeCurve = Interval(
-  0,
-  _portraitVeilFadeEnd,
-  curve: Curves.easeInOut,
-);
-
 const Curve _openCurve = Cubic(0.22, 0.77, 0.08, 1.0);
 
 const Curve _openPortraitCurve = Cubic(0.28, 0.70, 0.12, 1.0);
@@ -762,13 +755,10 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
             : (horizontal
                   ? _cardLayerOpenFadeCurve
                   : _cardLayerPortraitOpenFadeCurve);
-        final veilFadeCurve = horizontal
-            ? _veilFadeCurve
-            : _portraitVeilFadeCurve;
         final cardAlpha = 1 - fadeCurve.transform(progress);
-        final veilAlpha = widget.returning
+        final veilAlpha = widget.returning || !horizontal
             ? 0.0
-            : 1 - veilFadeCurve.transform(progress);
+            : 1 - _veilFadeCurve.transform(progress);
         if (!_measured ||
             (cardAlpha <= _paintEpsilon && veilAlpha <= _paintEpsilon)) {
           return const SizedBox.shrink();
