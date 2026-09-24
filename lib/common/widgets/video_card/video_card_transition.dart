@@ -17,7 +17,7 @@ const Curve _cardLayerOpenFadeCurve = Interval(
 );
 
 const double _cardLayerPortraitOpenHoldUntil = 0.08;
-const double _cardLayerPortraitOpenFadeEnd = 0.46;
+const double _cardLayerPortraitOpenFadeEnd = 0.33;
 const Curve _cardLayerPortraitOpenFadeCurve = Interval(
   _cardLayerPortraitOpenHoldUntil,
   _cardLayerPortraitOpenFadeEnd,
@@ -31,8 +31,6 @@ const Curve _cardLayerCloseFadeCurve = Interval(
   _cardLayerCloseFadeEnd,
   curve: Curves.easeOutCubic,
 );
-
-const double _portraitFlightExtent = 0.25;
 
 const double _horizontalAspect = 1.35;
 
@@ -762,16 +760,13 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
           return const SizedBox.shrink();
         }
         final openProgress = _openCurveFor(horizontal).transform(progress);
-        final flightProgress = horizontal
-            ? openProgress
-            : openProgress * _portraitFlightExtent;
         final rect = widget.returning
             ? Rect.lerp(
                 widget.viewportRect,
                 widget.cardRect,
                 _closeCurve.transform(1 - progress),
               )!
-            : Rect.lerp(widget.cardRect, widget.viewportRect, flightProgress)!;
+            : Rect.lerp(widget.cardRect, widget.viewportRect, openProgress)!;
         final flightOrigin = horizontal
             ? rect.topLeft
             : _flightBoxOrigin(widget.flightContext);
