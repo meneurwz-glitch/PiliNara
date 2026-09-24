@@ -32,20 +32,21 @@ const Curve _cardLayerCloseFadeCurve = Interval(
   curve: Curves.easeOutCubic,
 );
 
-const double _portraitFlightExtent = 0.25;
+const double _flightExtent = 0.25;
+
+const double _backdropCloseSolidUntil = 0.36;
+const double _backdropCloseFadeFrom = 0.86;
+const Curve _backdropCloseFadeCurve = Interval(
+  _backdropCloseSolidUntil,
+  _backdropCloseFadeFrom,
+  curve: Curves.easeInCubic,
+);
 
 const double _horizontalAspect = 1.35;
 
 bool _isHorizontalFlight(Size card, Size viewport) =>
     card.width >= card.height * _horizontalAspect ||
     viewport.width > viewport.height;
-
-const double _veilFadeEnd = 0.70;
-const Curve _veilFadeCurve = Interval(
-  0,
-  _veilFadeEnd,
-  curve: Curves.easeInOut,
-);
 
 const Curve _openCurve = Cubic(0.22, 0.77, 0.08, 1.0);
 
@@ -346,6 +347,7 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
   RenderBox? _sourceBox;
   Rect? _sourceRect;
   bool _entryCompleted = false;
+  bool _coverFirstFrame = true;
 
   @override
   void initState() {
@@ -354,6 +356,9 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
       _sourceBox = _pendingVideoTransition!.box;
       _sourceRect = _sourceBox!.localToGlobal(Offset.zero) & _sourceBox!.size;
       _pendingVideoTransition = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _coverFirstFrame = false);
+      });
     }
   }
 
@@ -472,6 +477,19 @@ class _VideoPageHeroTargetState extends State<VideoPageHeroTarget> {
                           ),
                   ),
                 ),
+                if (_coverFirstFrame)
+                  Positioned.fromRect(
+                    key: const ValueKey('video-transition-first-frame-cover'),
+                    rect: pageRect,
+                    child: IgnorePointer(
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(_cardRadius),
+                        ),
+                        child: ColoredBox(color: widget.surfaceColor),
+                      ),
+                    ),
+                  ),
                 Positioned.fill(
                   key: const ValueKey('video-transition-hero-position'),
                   child: IgnorePointer(
@@ -535,6 +553,53 @@ class _ScrimPainter extends CustomPainter {
   @override
   bool shouldRepaint(_ScrimPainter oldDelegate) =>
       oldDelegate.rect != rect ||
+      oldDelegate.color != color ||
+      oldDelegate.radius != radius;
+}
+
+class _CardBackdropPainter extends CustomPainter {
+  const _CardBackdropPainter({
+    required this.outer,
+    this.inner,
+    required this.color,
+    this.radius = _cardRadius,
+  });
+
+  final Rect outer;
+
+  final Rect? inner;
+
+  final Color color;
+
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final outerRounded = _rounded(outer);
+    canvas.clipRRect(outerRounded);
+    final paint = Paint()..color = color;
+    final hole = inner;
+    if (hole == null) {
+      canvas.drawRRect(outerRounded, paint);
+      return;
+    }
+    final path = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRRect(outerRounded)
+      ..addRRect(_rounded(hole));
+    canvas.drawPath(path, paint);
+  }
+
+  RRect _rounded(Rect rect) {
+    final maxRadius = rect.shortestSide / 2;
+    final r = radius < maxRadius ? radius : maxRadius;
+    return RRect.fromRectAndRadius(rect, Radius.circular(r));
+  }
+
+  @override
+  bool shouldRepaint(_CardBackdropPainter oldDelegate) =>
+      oldDelegate.outer != outer ||
+      oldDelegate.inner != inner ||
       oldDelegate.color != color ||
       oldDelegate.radius != radius;
 }
@@ -747,78 +812,78 @@ class _FlightCardLayerState extends State<_FlightCardLayer> {
                   ? _cardLayerOpenFadeCurve
                   : _cardLayerPortraitOpenFadeCurve);
         final cardAlpha = 1 - fadeCurve.transform(progress);
-        final veilAlpha = widget.returning || !horizontal
-            ? 0.0
-            : 1 - _veilFadeCurve.transform(progress);
+        final backdropAlpha = widget.returning
+            ? 1 - _backdropCloseFadeCurve.transform(progress)
+            : cardAlpha;
         if (!_measured ||
-            (cardAlpha <= _paintEpsilon && veilAlpha <= _paintEpsilon)) {
+            (cardAlpha <= _paintEpsilon && backdropAlpha <= _paintEpsilon)) {
           return const SizedBox.shrink();
         }
         final openProgress = _openCurveFor(horizontal).transform(progress);
-        final flightProgress = horizontal
-            ? openProgress
-            : openProgress * _portraitFlightExtent;
+        final closeProgress = _closeCurve.transform(1 - progress);
+        final pageProgress = widget.returning ? closeProgress : openProgress;
+        final flightProgress = widget.returning
+            ? closeProgress
+            : openProgress * _flightExtent;
         final rect = widget.returning
-            ? Rect.lerp(
-                widget.viewportRect,
-                widget.cardRect,
-                _closeCurve.transform(1 - progress),
-              )!
+            ? Rect.lerp(widget.viewportRect, widget.cardRect, closeProgress)!
             : Rect.lerp(widget.cardRect, widget.viewportRect, flightProgress)!;
+        final pageRect = widget.returning
+            ? Rect.lerp(widget.viewportRect, widget.cardRect, pageProgress)!
+            : Rect.lerp(widget.cardRect, widget.viewportRect, pageProgress)!;
         final box = widget.flightContext.findRenderObject();
         final flightOrigin = box is RenderBox && box.hasSize
             ? box.localToGlobal(Offset.zero)
             : Offset.zero;
         final localRect = rect.shift(-flightOrigin);
+        final localPageRect = pageRect.shift(-flightOrigin);
         final scale = rect.width / widget.cardRect.width;
+        final showBackdrop =
+            backdropAlpha > _paintEpsilon &&
+            (!widget.returning || cardAlpha < 1 - _paintEpsilon);
         final nav = widget.bottomNav?.shift(-flightOrigin);
         final content = Stack(
           fit: StackFit.expand,
           clipBehavior: Clip.none,
           children: [
+            Positioned.fill(
+              key: const ValueKey('video-transition-card-backdrop'),
+              child: CustomPaint(
+                painter: showBackdrop
+                    ? _CardBackdropPainter(
+                        outer: localPageRect,
+                        inner: widget.returning ? null : localRect,
+                        color: widget.cardColor.withValues(
+                          alpha: backdropAlpha,
+                        ),
+                        radius: widget.radius,
+                      )
+                    : null,
+              ),
+            ),
             Positioned.fromRect(
               key: const ValueKey('video-transition-card-layer'),
               rect: localRect,
               child: ClipRRect(
                 borderRadius: _radius,
-                child: Stack(
-                  fit: StackFit.expand,
-                  clipBehavior: Clip.none,
-                  children: [
-                    if (veilAlpha > _paintEpsilon)
-                      Positioned.fill(
-                        key: const ValueKey('video-transition-card-veil'),
-                        child: IgnorePointer(
-                          child: ColoredBox(
-                            color: widget.cardColor.withValues(
-                              alpha: veilAlpha,
-                            ),
-                          ),
-                        ),
+                child: Opacity(
+                  opacity: cardAlpha,
+                  child: ColoredBox(
+                    color: widget.cardColor,
+                    child: OverflowBox(
+                      alignment: Alignment.topLeft,
+                      minWidth: 0,
+                      minHeight: 0,
+                      maxWidth: double.infinity,
+                      maxHeight: double.infinity,
+                      child: Transform.scale(
+                        scale: scale,
+                        alignment: Alignment.topLeft,
+                        filterQuality: FilterQuality.low,
+                        child: child,
                       ),
-                    if (cardAlpha > _paintEpsilon)
-                      Positioned.fill(
-                        child: Opacity(
-                          opacity: cardAlpha,
-                          child: ColoredBox(
-                            color: widget.cardColor,
-                            child: OverflowBox(
-                              alignment: Alignment.topLeft,
-                              minWidth: 0,
-                              minHeight: 0,
-                              maxWidth: double.infinity,
-                              maxHeight: double.infinity,
-                              child: Transform.scale(
-                                scale: scale,
-                                alignment: Alignment.topLeft,
-                                filterQuality: FilterQuality.low,
-                                child: child,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+                    ),
+                  ),
                 ),
               ),
             ),
